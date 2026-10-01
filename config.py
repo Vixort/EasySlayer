@@ -23,6 +23,11 @@ DEFAULT_CONFIG = {
     "far_distance_px": 35,              # Distance in px before switching from tap to continuous hold
     "deadzone_px": 5,                   # Deadzone pixels around center
     
+    # Stuck Rod Recovery
+    "stuck_recovery_enabled": True,      # Auto-recast if rod stuck or fish lost
+    "stuck_minigame_timeout": 35.0,     # Max duration (s) in minigame before forced recovery
+    "stuck_target_lost_timeout": 6.0,   # Max duration (s) target is lost during minigame before recovery
+    
     # Process 5: Fish collection & loop
     "post_catch_delay": 1.5,            # Grace delay (s) after minigame ends before collecting
     "hold_t_key": "t",

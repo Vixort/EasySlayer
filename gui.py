@@ -48,7 +48,7 @@ class ModernFishingGUI:
         # Initial geometry (compact)
         self.is_expanded = False
         self.compact_size = (470, 245)
-        self.expanded_size = (470, 560)
+        self.expanded_size = (470, 595)
         self.root.geometry(f"{self.compact_size[0]}x{self.compact_size[1]}+30+60")
 
         # Dragging state
@@ -293,6 +293,19 @@ class ModernFishingGUI:
         self.spn_sat.insert(0, str(self.cfg.get("target_min_sat", 65)))
         self.spn_sat.pack(side=tk.RIGHT)
 
+        # Stuck Rod Recovery Timeouts
+        f_stuck = tk.Frame(self.settings_panel, bg="#111420")
+        f_stuck.pack(fill=tk.X, pady=3)
+        tk.Label(f_stuck, text="Stuck Minigame / Lost (s):", font=("Segoe UI", 8), fg="#E2E8F0", bg="#111420").pack(side=tk.LEFT)
+        self.spn_stuck_mg = tk.Spinbox(f_stuck, from_=10.0, to=90.0, increment=5.0, width=4, bg="#1E2337", fg="#FFFFFF")
+        self.spn_stuck_mg.delete(0, tk.END)
+        self.spn_stuck_mg.insert(0, str(self.cfg.get("stuck_minigame_timeout", 35.0)))
+        self.spn_stuck_mg.pack(side=tk.RIGHT, padx=(2, 0))
+        self.spn_stuck_lost = tk.Spinbox(f_stuck, from_=2.0, to=20.0, increment=1.0, width=4, bg="#1E2337", fg="#FFFFFF")
+        self.spn_stuck_lost.delete(0, tk.END)
+        self.spn_stuck_lost.insert(0, str(self.cfg.get("stuck_target_lost_timeout", 6.0)))
+        self.spn_stuck_lost.pack(side=tk.RIGHT)
+
         # Window Transparency Slider
         f_al = tk.Frame(self.settings_panel, bg="#111420")
         f_al.pack(fill=tk.X, pady=3)
@@ -374,6 +387,8 @@ class ModernFishingGUI:
             self.cfg["delay_before_recast"] = float(self.spn_recast.get())
             self.cfg["target_min_sat"] = int(self.spn_sat.get())
             self.cfg["target_min_val"] = int(self.spn_val.get())
+            self.cfg["stuck_minigame_timeout"] = float(self.spn_stuck_mg.get())
+            self.cfg["stuck_target_lost_timeout"] = float(self.spn_stuck_lost.get())
             config.save_config(self.cfg)
             self.controller.update_config(self.cfg)
             play_sound_async(1200, 80)
@@ -418,6 +433,7 @@ class ModernFishingGUI:
             FishingState.CASTING: ("#F59E0B", "#451A03", "1: Casting"),
             FishingState.WAITING_BITE: ("#38BDF8", "#0C2540", "2: Waiting Bite"),
             FishingState.MINIGAME: ("#EC4899", "#4A0424", "3: Reeling Fish"),
+            FishingState.RECOVERY: ("#FB923C", "#431407", "Recovery: Recasting"),
             FishingState.COLLECTING: ("#A855F7", "#2E1065", "5: Collecting"),
             FishingState.COOLDOWN: ("#10B981", "#064E3B", "Cooldown")
         }

@@ -11,6 +11,7 @@ class FishingState:
     CASTING = "CASTING"
     WAITING_BITE = "WAITING_BITE"
     MINIGAME = "MINIGAME"
+    RECOVERY = "RECOVERY"
     COLLECTING = "COLLECTING"
     COOLDOWN = "COOLDOWN"
 
@@ -139,8 +140,13 @@ class FishingController:
                     break
 
                 if not bite_detected:
-                    self.set_state(FishingState.WAITING_BITE, "No bite detected, recasting...")
-                    self._sleep_interruptible(0.5)
+                    self.set_state(FishingState.RECOVERY, "No bite detected: recovering and recasting...")
+                    self.current_action = "STUCK_RECOVERY"
+                    self.input_mgr.force_mouse_up()
+                    self.detector.reset_tracking()
+                    # Perform click to reset any stuck rod/prompt
+                    self.input_mgr.click(0.06)
+                    self._sleep_interruptible(0.8)
                     continue
 
                 # ==============================================================
@@ -150,8 +156,13 @@ class FishingController:
                 self.set_state(FishingState.MINIGAME, "Reeling in fish!")
                 minigame_running = True
                 minigame_start_time = time.time()
-                max_minigame_time = 45.0  # Safety timeout
+                
+                # Stuck Rod Recovery thresholds
+                stuck_enabled = self.config.get("stuck_recovery_enabled", True)
+                stuck_minigame_timeout = self.config.get("stuck_minigame_timeout", 35.0)
+                stuck_target_lost_timeout = self.config.get("stuck_target_lost_timeout", 6.0)
 
+                target_last_seen_time = time.time()
                 last_gui_update = 0.0
                 last_valid_target_y = None
                 
@@ -160,34 +171,54 @@ class FishingController:
                 tap_start_time = 0.0
                 is_tap_active = False
 
+                fish_caught = False
+                stuck_triggered = False
+
                 while self.running and minigame_running:
-                    # Timeout safety to prevent infinite freeze
-                    if time.time() - minigame_start_time > max_minigame_time:
+                    now_time = time.time()
+
+                    # Stuck Recovery Check 1: Minigame taking longer than max allowed duration
+                    if stuck_enabled and (now_time - minigame_start_time > stuck_minigame_timeout):
                         self.input_mgr.force_mouse_up()
+                        self.current_action = "STUCK_RECOVERY"
+                        self.set_state(FishingState.RECOVERY, "Minigame timeout: resetting rod...")
+                        self.detector.reset_tracking()
+                        stuck_triggered = True
+                        break
+
+                    # Stuck Recovery Check 2: Target/fish lost for too long during active minigame
+                    if stuck_enabled and (now_time - target_last_seen_time > stuck_target_lost_timeout):
+                        self.input_mgr.force_mouse_up()
+                        self.current_action = "STUCK_RECOVERY"
+                        self.set_state(FishingState.RECOVERY, "Target lost timeout: resetting rod...")
+                        self.detector.reset_tracking()
+                        stuck_triggered = True
                         break
 
                     frame = self._grab_roi_frame(sct, roi)
-                    now_time = time.time()
                     need_preview = (now_time - last_gui_update >= 0.06)
 
                     det_res = self.detector.detect(frame, need_annotated=need_preview)
 
-                    # Check if minigame ended (Process 4: GUI disappears)
+                    # Check if minigame ended (Process 4: GUI disappears when fish is hooked)
                     if not det_res["is_active"]:
                         self.input_mgr.force_mouse_up()
                         self.current_action = "RELEASE (CAUGHT)"
                         self.detector.reset_tracking()
+                        fish_caught = True
                         minigame_running = False
                         break
 
                     white_y = det_res["white_center_y"]
                     target_center_y = det_res["target_center_y"]
 
-                    # Bridge any momentary color-shift gap
+                    # Bridge brief color shifts and track when target was last seen
                     if target_center_y is not None:
                         last_valid_target_y = target_center_y
+                        target_last_seen_time = now_time
                     elif last_valid_target_y is not None:
-                        target_center_y = last_valid_target_y
+                        if now_time - target_last_seen_time < 0.25:
+                            target_center_y = last_valid_target_y
 
                     if white_y is not None and target_center_y is not None:
                         # Target boundaries
@@ -250,6 +281,14 @@ class FishingController:
 
                 if not self.running:
                     break
+
+                # If recovery was triggered or fish was not hooked, reset rod and recast immediately
+                if stuck_triggered or not fish_caught:
+                    self.current_action = "RECOVERY_CLICK"
+                    self._sleep_interruptible(0.5)
+                    self.input_mgr.click(0.06)
+                    self._sleep_interruptible(0.8)
+                    continue
 
                 # Count fish caught
                 self.fish_count += 1
