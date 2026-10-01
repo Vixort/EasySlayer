@@ -1,7 +1,13 @@
 import json
 import os
+import sys
 
-CONFIG_FILE = "fishing_config.json"
+def get_base_dir():
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+CONFIG_FILE = os.path.join(get_base_dir(), "fishing_config.json")
 
 DEFAULT_CONFIG = {
     # Process 1: Cast rod

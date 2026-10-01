@@ -92,8 +92,9 @@ pip install mss opencv-python numpy pyautogui pynput pillow
 ```
 
 ### Step 2: Launch EasySlayer
-* **Option A:** Double-click **`run.bat`**
-* **Option B:** Run via terminal:
+* **Option A (Direct Executable):** Run **`dist\EasySlayer.exe`** (or double-click **`build_exe.bat`** to build the standalone `.exe` anytime).
+* **Option B (Batch Script):** Double-click **`run.bat`**
+* **Option C (Terminal):**
 ```bash
 py main.py
 ```
@@ -137,6 +138,7 @@ EasySlayer/
 ├── test_detection.py         # Test harness for detector calibration
 ├── main.py                   # Application entry point
 ├── run.bat                   # Windows batch launcher
+├── build_exe.bat             # One-click standalone .exe compiler
 └── README.md                 # Complete documentation
 ```
 

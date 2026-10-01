@@ -1,8 +1,30 @@
 import os
+import sys
 import cv2
 import numpy as np
 
 TEMPLATE_FILE = "white_slider_template.png"
+
+def resolve_resource_path(filename):
+    """
+    Locates resource file across PyInstaller bundle (_MEIPASS),
+    executable directory, script directory, or working directory.
+    """
+    if getattr(sys, 'frozen', False):
+        meipass = getattr(sys, '_MEIPASS', None)
+        if meipass:
+            p = os.path.join(meipass, filename)
+            if os.path.exists(p):
+                return p
+        exe_dir = os.path.dirname(sys.executable)
+        p = os.path.join(exe_dir, filename)
+        if os.path.exists(p):
+            return p
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    p = os.path.join(script_dir, filename)
+    if os.path.exists(p):
+        return p
+    return filename
 
 class FishBarDetector:
     def __init__(self, config=None):
@@ -26,14 +48,15 @@ class FishBarDetector:
         self.max_target_grace_frames = 12  # ~0.2s grace period
 
     def _load_template(self):
-        if os.path.exists(TEMPLATE_FILE):
+        tmpl_path = resolve_resource_path(TEMPLATE_FILE)
+        if os.path.exists(tmpl_path):
             try:
-                tmpl = cv2.imread(TEMPLATE_FILE)
+                tmpl = cv2.imread(tmpl_path)
                 if tmpl is not None:
                     self.tmpl_gray = cv2.cvtColor(tmpl, cv2.COLOR_BGR2GRAY)
                     self.tmpl_h, self.tmpl_w = self.tmpl_gray.shape[:2]
             except Exception as e:
-                print(f"Notice: Could not load template {TEMPLATE_FILE}: {e}")
+                print(f"Notice: Could not load template {tmpl_path}: {e}")
 
     def update_config(self, config):
         self.config = config

@@ -4,3 +4,7 @@ fishing_config.json
 test_detection_output.png
 bar_crop.png
 bar_edges.png
+build/
+dist/
+*.spec
+
