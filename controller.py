@@ -1,0 +1,288 @@
+import time
+import threading
+import mss
+import numpy as np
+from detector import FishBarDetector
+from input_manager import InputManager
+
+class FishingState:
+    STOPPED = "STOPPED"
+    IDLE = "IDLE"
+    CASTING = "CASTING"
+    WAITING_BITE = "WAITING_BITE"
+    MINIGAME = "MINIGAME"
+    COLLECTING = "COLLECTING"
+    COOLDOWN = "COOLDOWN"
+
+class FishingController:
+    def __init__(self, config, on_status_change=None, on_frame_update=None, on_fish_caught=None):
+        self.config = config
+        self.on_status_change = on_status_change
+        self.on_frame_update = on_frame_update
+        self.on_fish_caught = on_fish_caught
+
+        self.detector = FishBarDetector(config)
+        self.input_mgr = InputManager()
+        
+        self.running = False
+        self.thread = None
+        self.state = FishingState.STOPPED
+        self.fish_count = 0
+        self.current_action = "NONE"
+
+    def update_config(self, new_config):
+        self.config = new_config
+        self.detector.update_config(new_config)
+
+    def set_state(self, state, details=""):
+        self.state = state
+        if self.on_status_change:
+            self.on_status_change(state, details)
+
+    def start(self):
+        if self.running:
+            return False
+        
+        roi = self.config.get("roi", {})
+        if not roi.get("is_configured", False) or roi.get("width", 0) <= 0:
+            if self.on_status_change:
+                self.on_status_change(FishingState.STOPPED, "Please select fishing ROI first!")
+            return False
+
+        self.running = True
+        self.thread = threading.Thread(target=self._run_loop, daemon=True)
+        self.thread.start()
+        return True
+
+    def stop(self):
+        self.running = False
+        self.input_mgr.release_all()
+        self.detector.reset_tracking()
+        self.current_action = "NONE"
+        self.set_state(FishingState.STOPPED, "Ready")
+
+    def reset_stats(self):
+        self.fish_count = 0
+        if self.on_fish_caught:
+            self.on_fish_caught(0)
+
+    def _sleep_interruptible(self, duration):
+        """High-resolution interruptible sleep"""
+        end_time = time.time() + duration
+        while self.running and time.time() < end_time:
+            time.sleep(min(0.03, end_time - time.time()))
+
+    def _grab_roi_frame(self, sct, roi):
+        monitor = {
+            "top": int(roi["top"]),
+            "left": int(roi["left"]),
+            "width": int(roi["width"]),
+            "height": int(roi["height"])
+        }
+        sct_img = sct.grab(monitor)
+        frame = np.array(sct_img, dtype=np.uint8)
+        return frame[:, :, :3]
+
+    def _run_loop(self):
+        with mss.mss() as sct:
+            roi = self.config.get("roi")
+
+            while self.running:
+                # ==============================================================
+                # Process 1: Cast rod
+                # ==============================================================
+                self.current_action = "CAST"
+                self.set_state(FishingState.CASTING, "Casting rod...")
+                cast_mode = self.config.get("cast_key_or_click", "left_click")
+                if cast_mode == "left_click":
+                    self.input_mgr.click(0.05)
+                else:
+                    self.input_mgr.key_down(cast_mode)
+                    time.sleep(0.05)
+                    self.input_mgr.key_up(cast_mode)
+
+                cast_delay = self.config.get("cast_post_delay", 1.2)
+                self._sleep_interruptible(cast_delay)
+                if not self.running:
+                    break
+
+                # ==============================================================
+                # Process 2: Wait for bite (Minigame UI appears)
+                # ==============================================================
+                self.current_action = "WAIT_BITE"
+                self.set_state(FishingState.WAITING_BITE, "Waiting for bite...")
+                bite_start = time.time()
+                bite_timeout = self.config.get("bite_timeout", 60.0)
+                bite_detected = False
+                last_gui_update = 0.0
+
+                while self.running and (time.time() - bite_start < bite_timeout):
+                    frame = self._grab_roi_frame(sct, roi)
+                    now = time.time()
+                    need_preview = (now - last_gui_update >= 0.07)
+                    
+                    det_res = self.detector.detect(frame, need_annotated=need_preview)
+
+                    if need_preview:
+                        last_gui_update = now
+                        det_res["action"] = self.current_action
+                        if self.on_frame_update:
+                            self.on_frame_update(det_res)
+
+                    if det_res["is_active"]:
+                        bite_detected = True
+                        break
+
+                    time.sleep(0.015)
+
+                if not self.running:
+                    break
+
+                if not bite_detected:
+                    self.set_state(FishingState.WAITING_BITE, "No bite detected, recasting...")
+                    self._sleep_interruptible(0.5)
+                    continue
+
+                # ==============================================================
+                # Process 3: Balanced positioning (rhythmic tap strictly inside box)
+                # Process 4: GUI disappears when fish is caught
+                # ==============================================================
+                self.set_state(FishingState.MINIGAME, "Reeling in fish!")
+                minigame_running = True
+                minigame_start_time = time.time()
+                max_minigame_time = 45.0  # Safety timeout
+
+                last_gui_update = 0.0
+                last_valid_target_y = None
+                
+                # Non-blocking pulse tracking
+                last_tap_time = 0.0
+                tap_start_time = 0.0
+                is_tap_active = False
+
+                while self.running and minigame_running:
+                    # Timeout safety to prevent infinite freeze
+                    if time.time() - minigame_start_time > max_minigame_time:
+                        self.input_mgr.force_mouse_up()
+                        break
+
+                    frame = self._grab_roi_frame(sct, roi)
+                    now_time = time.time()
+                    need_preview = (now_time - last_gui_update >= 0.06)
+
+                    det_res = self.detector.detect(frame, need_annotated=need_preview)
+
+                    # Check if minigame ended (Process 4: GUI disappears)
+                    if not det_res["is_active"]:
+                        self.input_mgr.force_mouse_up()
+                        self.current_action = "RELEASE (CAUGHT)"
+                        self.detector.reset_tracking()
+                        minigame_running = False
+                        break
+
+                    white_y = det_res["white_center_y"]
+                    target_center_y = det_res["target_center_y"]
+
+                    # Bridge any momentary color-shift gap
+                    if target_center_y is not None:
+                        last_valid_target_y = target_center_y
+                    elif last_valid_target_y is not None:
+                        target_center_y = last_valid_target_y
+
+                    if white_y is not None and target_center_y is not None:
+                        # Target boundaries
+                        target_top = det_res.get("target_top_y")
+                        target_bottom = det_res.get("target_bottom_y")
+                        if target_top is None:
+                            target_top = target_center_y - 20
+                        if target_bottom is None:
+                            target_bottom = target_center_y + 20
+
+                        # Check if white slider is strictly INSIDE the target box
+                        is_inside_box = (white_y >= target_top) and (white_y <= target_bottom)
+
+                        # ------------------------------------------------------
+                        # CASE 1: Strictly inside target box -> Rhythmic tap
+                        # ------------------------------------------------------
+                        if is_inside_box:
+                            tap_interval = 0.050 if white_y > target_center_y else 0.075
+                            if not is_tap_active and (now_time - last_tap_time >= tap_interval):
+                                self.input_mgr.mouse_down()
+                                is_tap_active = True
+                                tap_start_time = now_time
+                                self.current_action = "TAP (INSIDE BOX)"
+                            elif is_tap_active and (now_time - tap_start_time >= 0.018):
+                                self.input_mgr.mouse_up()
+                                is_tap_active = False
+                                last_tap_time = now_time
+
+                        # ------------------------------------------------------
+                        # CASE 2: Below target box -> Continuous hold climb
+                        # ------------------------------------------------------
+                        elif white_y > target_bottom:
+                            is_tap_active = False
+                            self.input_mgr.mouse_down()
+                            self.current_action = "HOLD (CLIMB)"
+
+                        # ------------------------------------------------------
+                        # CASE 3: Above target box -> Complete release drop
+                        # ------------------------------------------------------
+                        else:
+                            is_tap_active = False
+                            self.input_mgr.mouse_up()
+                            self.current_action = "RELEASE (DROP)"
+
+                    elif white_y is not None:
+                        is_tap_active = False
+                        self.input_mgr.mouse_up()
+                        self.current_action = "WAIT_TARGET"
+
+                    if need_preview:
+                        last_gui_update = now_time
+                        det_res["action"] = self.current_action
+                        if self.on_frame_update:
+                            self.on_frame_update(det_res)
+
+                    time.sleep(0.003)
+
+                # Ensure mouse is released
+                self.input_mgr.force_mouse_up()
+
+                if not self.running:
+                    break
+
+                # Count fish caught
+                self.fish_count += 1
+                if self.on_fish_caught:
+                    self.on_fish_caught(self.fish_count)
+
+                # Process 4 -> 5 Delay: Grace period for catch animation
+                post_catch_delay = self.config.get("post_catch_delay", 1.5)
+                self.current_action = f"WAIT_{post_catch_delay}S"
+                self.set_state(FishingState.COLLECTING, f"Fish caught! Waiting {post_catch_delay}s before collecting...")
+                self._sleep_interruptible(post_catch_delay)
+                if not self.running:
+                    break
+
+                # ==============================================================
+                # Process 5: Hold T key for 3.0s to collect fish
+                # ==============================================================
+                hold_t_time = self.config.get("hold_t_duration", 3.0)
+                t_key = self.config.get("hold_t_key", "t")
+                self.current_action = f"HOLD_{t_key.upper()}"
+                self.set_state(FishingState.COLLECTING, f"Holding '{t_key.upper()}' for {hold_t_time}s to collect fish...")
+                
+                self.input_mgr.hold_key(t_key, hold_t_time, is_running_check=lambda: self.running, repeat_interval=0.05)
+
+                if not self.running:
+                    break
+
+                # ==============================================================
+                # Process 5 -> 1: Cooldown before starting next cycle
+                # ==============================================================
+                recast_delay = self.config.get("delay_before_recast", 3.0)
+                self.current_action = "COOLDOWN"
+                self.set_state(FishingState.COOLDOWN, f"Cooldown: waiting {recast_delay}s before next cast...")
+                self._sleep_interruptible(recast_delay)
+
+        self.input_mgr.release_all()
