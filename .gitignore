@@ -1,10 +1,31 @@
+# Python Bytecode & Cache
 __pycache__/
-*.pyc
-fishing_config.json
-test_detection_output.png
-bar_crop.png
-bar_edges.png
+*.py[cod]
+*$py.class
+
+# PyInstaller & Build Outputs
 build/
 dist/
 *.spec
+
+# User Configuration & Local Data
+fishing_config.json
+
+# Debug Images & Logs
+test_detection_output.png
+bar_crop.png
+bar_edges.png
+*.log
+
+# Environments
+venv/
+.venv/
+env/
+
+# IDE & Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+
 
