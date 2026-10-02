@@ -595,8 +595,9 @@ class FishCatchDetector:
 
     def clean_fish_name(self, raw_text):
         """
-        Cleans OCR text to extract the actual fish name.
-        E.g. 'Golden Fish Caught' or 'Golden Fish Collect' -> 'Golden Fish'
+        Cleans OCR text to extract the actual fish/item name.
+        Supports any fish species or non-fish item (e.g. Iron, Wood, Scrap, Trash, etc.)
+        E.g. 'Golden Fish Caught' -> 'Golden Fish', 'Iron Caught' -> 'Iron'
         """
         if not raw_text:
             return None
@@ -606,10 +607,9 @@ class FishCatchDetector:
         for line in lines:
             # Remove keywords like Caught, Collect, Hold, Press, Keep, etc.
             cleaned = re.sub(r'(?i)\b(caught|collect|collecting|hold|press|to|keep|new|sell|backpack|kg|lbs|weight|size)\b', '', line)
-            cleaned = re.sub(r'[^a-zA-Z0-9\s\-\'\.]', '', cleaned).strip()
-            # Must contain letters and be reasonably long
-            if len(cleaned) >= 3 and any(c.isalpha() for c in cleaned):
-                # Clean up multiple spaces
+            cleaned = re.sub(r'[^\w\s\-\'\.]', '', cleaned, flags=re.UNICODE).strip()
+            # Must contain letters or numbers and be at least 2 characters
+            if len(cleaned) >= 2 and any(c.isalnum() for c in cleaned):
                 cleaned = re.sub(r'\s+', ' ', cleaned)
                 return cleaned
         return None

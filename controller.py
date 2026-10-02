@@ -363,8 +363,14 @@ class FishingController:
                 if stuck_triggered or not fish_caught:
                     self.fish_failed_count += 1
                     if self.on_fish_caught:
-                        self.on_fish_caught(self.fish_count, self.last_fish_name, self.fish_counts, self.fish_failed_count)
-                    self.set_state(FishingState.RECOVERY, "Resetting: recasting rod...")
+                        self.on_fish_caught(self.fish_count, "ตกไม่ได้ปลา", self.fish_counts, self.fish_failed_count)
+                    if self.config.get("webhook_notify_on_fail", True):
+                        self.webhook_mgr.send_failed_notification(
+                            reason="มินิเกมหมดเวลา / หลุด (Stuck/Lost)",
+                            total_caught=self.fish_count,
+                            total_failed=self.fish_failed_count
+                        )
+                    self.set_state(FishingState.RECOVERY, "ตกไม่ได้ปลา: recasting rod...")
                     self.current_action = "RECOVERY_RECAST"
                     self.input_mgr.force_mouse_up()
                     self.detector.reset_tracking()
@@ -372,11 +378,11 @@ class FishingController:
                     continue
 
                 # ==============================================================
-                # Process 4: Post-Catch Delay & Initial Fish Recognition
+                # Process 4: Post-Catch Delay & Catch Verification (Fish vs Failed)
                 # ==============================================================
                 post_catch_delay = self.config.get("post_catch_delay", 1.0)
                 self.current_action = "WAIT_CATCH_DELAY"
-                self.set_state(FishingState.COLLECTING, f"Fish caught! Waiting {post_catch_delay:.1f}s for animation...")
+                self.set_state(FishingState.COLLECTING, f"Fish hooked! Waiting {post_catch_delay:.1f}s for animation...")
                 self._sleep_interruptible(post_catch_delay)
                 if not self.running:
                     break
@@ -387,7 +393,7 @@ class FishingController:
                 collect_timeout = self.config.get("collect_timeout", 10.0)
                 max_retries = self.config.get("t_retry_limit", 5)
 
-                caught_name = "Unknown Fish"
+                caught_name = None
                 t_found = False
                 t_box = None
                 fish_thumb_bytes = None
@@ -396,21 +402,58 @@ class FishingController:
                 has_custom_catch_roi = catch_roi.get("is_configured", False) and catch_roi.get("width", 0) > 10
 
                 # Initial scan for [T] prompt and fish name
-                screen_frame = self._grab_center_screen_frame(sct)
-                t_found, t_conf, t_box, _ = self.catch_detector.detect_t_prompt(screen_frame)
+                scan_start = time.time()
+                while self.running and (time.time() - scan_start < 2.5):
+                    screen_frame = self._grab_center_screen_frame(sct)
+                    t_found, t_conf, t_box, _ = self.catch_detector.detect_t_prompt(screen_frame)
 
-                if has_custom_catch_roi:
-                    custom_frame = self._grab_roi_frame(sct, catch_roi)
-                    if self.config.get("ocr_fish_name_enabled", True):
-                        detected_name = self.catch_detector.recognize_fish_name(custom_frame)
+                    if has_custom_catch_roi:
+                        custom_frame = self._grab_roi_frame(sct, catch_roi)
+                        if self.config.get("ocr_fish_name_enabled", True) and not caught_name:
+                            detected_name = self.catch_detector.recognize_fish_name(custom_frame)
+                            if detected_name:
+                                caught_name = detected_name
+                        fish_thumb_bytes = self.catch_detector.extract_frame_bytes(custom_frame)
+                    elif self.config.get("ocr_fish_name_enabled", True) and not caught_name:
+                        detected_name = self.catch_detector.recognize_fish_name(screen_frame, prompt_box=t_box)
                         if detected_name:
                             caught_name = detected_name
-                    fish_thumb_bytes = self.catch_detector.extract_frame_bytes(custom_frame)
-                elif self.config.get("ocr_fish_name_enabled", True):
-                    detected_name = self.catch_detector.recognize_fish_name(screen_frame, prompt_box=t_box)
-                    if detected_name:
-                        caught_name = detected_name
-                    fish_thumb_bytes = self.catch_detector.extract_fish_thumbnail(screen_frame, prompt_box=t_box)
+                        fish_thumb_bytes = self.catch_detector.extract_fish_thumbnail(screen_frame, prompt_box=t_box)
+
+                    if t_found or caught_name:
+                        break
+                    time.sleep(0.08)
+
+                if not self.running:
+                    break
+
+                # --------------------------------------------------------------
+                # VERIFY IF WE ACTUALLY CAUGHT SOMETHING OR IF FISH ESCAPED
+                # If neither [T] prompt nor any item name was detected, it's a failed catch!
+                # --------------------------------------------------------------
+                if not t_found and not caught_name:
+                    self.fish_failed_count += 1
+                    if self.on_fish_caught:
+                        self.on_fish_caught(self.fish_count, "ตกไม่ได้ปลา", self.fish_counts, self.fish_failed_count)
+
+                    if self.config.get("webhook_notify_on_fail", True):
+                        self.webhook_mgr.send_failed_notification(
+                            reason="ปลาหลุด / ตกไม่ได้ปลา",
+                            total_caught=self.fish_count,
+                            total_failed=self.fish_failed_count,
+                            image_bytes=fish_thumb_bytes
+                        )
+
+                    self.set_state(FishingState.RECOVERY, "ตกไม่ได้ปลา (Fish Escaped) - Recasting...")
+                    self.current_action = "RECOVERY_RECAST"
+                    self.input_mgr.force_mouse_up()
+                    self.detector.reset_tracking()
+                    self._sleep_interruptible(0.4)
+                    continue  # Recast immediately!
+
+                # If item name not recognized yet but [T] prompt appeared, use generic label until Re-OCR
+                if not caught_name:
+                    caught_name = "Item / Fish"
 
                 # ==============================================================
                 # Process 5: Verified Auto-Collect Loop (Retry & Re-OCR until prompt disappears)
