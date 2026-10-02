@@ -213,8 +213,8 @@ class FishBarDetector:
             # Most robust against colored/multicolored/translucent backgrounds!
             # The target zone is a rectangular bar with distinct top & bottom edges.
             # -----------------------------------------------------------------
-            sobel_y = cv2.Sobel(track_gray, cv2.CV_64F, 0, 1, ksize=3)
-            abs_sobel = np.abs(sobel_y)
+            sobel_y = cv2.Sobel(track_gray, cv2.CV_16S, 0, 1, ksize=3)
+            abs_sobel = cv2.convertScaleAbs(sobel_y)
             # Average gradient across horizontal lines
             inner_start = max(0, int(col_w * 0.15))
             inner_end = min(col_w, int(col_w * 0.85))
@@ -227,7 +227,17 @@ class FishBarDetector:
                 for y in range(8, h_img - 8):
                     if row_grad[y] >= grad_thresh:
                         if row_grad[y] == np.max(row_grad[max(0, y - 3):min(h_img, y + 4)]):
-                            peak_rows.append((y, row_grad[y]))
+                            peak_rows.append((y, float(row_grad[y])))
+
+                # Precompute row means and integral cumulative sums for fast O(1) region queries
+                row_s = np.mean(track_s, axis=1)
+                row_v = np.mean(track_v, axis=1)
+                cs_s = np.empty(len(row_s) + 1, dtype=np.float32)
+                cs_v = np.empty(len(row_v) + 1, dtype=np.float32)
+                cs_s[0] = 0
+                cs_v[0] = 0
+                np.cumsum(row_s, out=cs_s[1:])
+                np.cumsum(row_v, out=cs_v[1:])
 
                 # Find valid top/bottom edge pairs
                 for i in range(len(peak_rows)):
@@ -237,8 +247,8 @@ class FishBarDetector:
                         h_span = bot_y - top_y
                         # Target height constraint: between 20px and 35% of total height
                         if 20 <= h_span <= min(95, int(h_img * 0.35)):
-                            zone_s = float(np.mean(track_s[top_y:bot_y, :]))
-                            zone_v = float(np.mean(track_v[top_y:bot_y, :]))
+                            zone_s = float((cs_s[bot_y] - cs_s[top_y]) / h_span)
+                            zone_v = float((cs_v[bot_y] - cs_v[top_y]) / h_span)
                             # Target has saturation or brightness
                             if zone_s >= 35 or zone_v >= 50:
                                 h_fit = 1.0 - min(1.0, abs(h_span - 40) / 45.0)

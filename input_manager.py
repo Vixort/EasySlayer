@@ -74,39 +74,51 @@ class InputManager:
     """
     High-performance Windows input simulator with state tracking.
     Uses official SendInput API with hardware scan codes.
+    Pre-allocates input structures for zero-allocation, sub-millisecond dispatch.
     """
     def __init__(self):
         self.user32 = ctypes.windll.user32
         self.is_mouse_down = False
         self.held_keys = set()
 
-    def _send_mouse_flag(self, flag):
-        inp = INPUT()
-        inp.type = INPUT_MOUSE
-        inp.union.mi.dx = 0
-        inp.union.mi.dy = 0
-        inp.union.mi.mouseData = 0
-        inp.union.mi.dwFlags = flag
-        inp.union.mi.time = 0
-        inp.union.mi.dwExtraInfo = None
-        self.user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
-        self.user32.mouse_event(flag, 0, 0, 0, 0)
+        # Pre-allocate mouse event structures to eliminate allocation latency in tight loops
+        self._inp_size = ctypes.sizeof(INPUT)
+
+        self._mouse_down_inp = INPUT()
+        self._mouse_down_inp.type = INPUT_MOUSE
+        self._mouse_down_inp.union.mi.dx = 0
+        self._mouse_down_inp.union.mi.dy = 0
+        self._mouse_down_inp.union.mi.mouseData = 0
+        self._mouse_down_inp.union.mi.dwFlags = MOUSEEVENTF_LEFTDOWN
+        self._mouse_down_inp.union.mi.time = 0
+        self._mouse_down_inp.union.mi.dwExtraInfo = None
+        self._byref_down = ctypes.byref(self._mouse_down_inp)
+
+        self._mouse_up_inp = INPUT()
+        self._mouse_up_inp.type = INPUT_MOUSE
+        self._mouse_up_inp.union.mi.dx = 0
+        self._mouse_up_inp.union.mi.dy = 0
+        self._mouse_up_inp.union.mi.mouseData = 0
+        self._mouse_up_inp.union.mi.dwFlags = MOUSEEVENTF_LEFTUP
+        self._mouse_up_inp.union.mi.time = 0
+        self._mouse_up_inp.union.mi.dwExtraInfo = None
+        self._byref_up = ctypes.byref(self._mouse_up_inp)
 
     def mouse_down(self):
         """Transitions mouse to down state (Hold). Only sends event on state transition."""
         if not self.is_mouse_down:
-            self._send_mouse_flag(MOUSEEVENTF_LEFTDOWN)
+            self.user32.SendInput(1, self._byref_down, self._inp_size)
             self.is_mouse_down = True
 
     def mouse_up(self):
         """Transitions mouse to up state (Release). Only sends event on state transition."""
         if self.is_mouse_down:
-            self._send_mouse_flag(MOUSEEVENTF_LEFTUP)
+            self.user32.SendInput(1, self._byref_up, self._inp_size)
             self.is_mouse_down = False
 
     def force_mouse_up(self):
         """Unconditionally release mouse left button"""
-        self._send_mouse_flag(MOUSEEVENTF_LEFTUP)
+        self.user32.SendInput(1, self._byref_up, self._inp_size)
         self.is_mouse_down = False
 
     def click(self, duration=0.03):

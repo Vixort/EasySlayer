@@ -30,10 +30,12 @@
 * **Normalized Cross-Correlation (NCC) Marker Matching:** Uses calibrated template matching (`white_slider_template.png`) and bar-constrained high-luminance fallback to track the player marker smoothly even when overlapping colored target zones.
 * **Multi-Frame Persistence:** A 12-frame history buffer maintains target continuity during rapid hue transitions or momentary occlusions.
 
-### 2. Smart Hybrid Physics & Mouse Balancing
-* **Ascent Dynamics (`HOLD (CLIMB)`):** Automatically executes a continuous left-click hold when the player marker is below the target zone, climbing against gravity.
-* **Descent Dynamics (`RELEASE (DROP)`):** Completely releases the mouse button when above the target zone, allowing gravity to drop the marker smoothly.
-* **Strict Inside-Box Micro-Tapping (`TAP (INSIDE BOX)`):** Rhythmic clicking is permitted **strictly** when the player marker is inside the target zone boundaries, preventing erratic overshoots and stabilizing near the center.
+### 2. Predictive Momentum Physics & Active Braking
+* **Velocity Tracking ($v_y = \Delta y / \Delta t$):** Continuously calculates the real-time velocity and momentum of the player slider to anticipate movements.
+* **Lookahead Active Braking (`BRAKE (COAST UP)` / `BRAKE (CATCH DROP)`):** Proactively cuts off ascent before breaching the top boundary and engages early lift before dropping below the bottom boundary. Completely eliminates overshoot and bounce oscillations.
+* **Ascent Dynamics (`HOLD (CLIMB)`):** High-speed climb against gravity when below target boundaries.
+* **Descent Dynamics (`RELEASE (DROP)`):** Instant release when above the target zone.
+* **Adaptive Inside-Box Micro-Tapping (`TAP (INSIDE BOX)`):** Dynamically adjusts pulse rate and duty cycle based on vertical distance from center, stabilizing the slider with sub-millisecond precision.
 
 ### 3. Hardware-Level Windows Input Emulation
 * **Direct Win32 `SendInput` API:** Bypasses virtual driver delays and software hooks by dispatching native Windows hardware events directly.

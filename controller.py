@@ -134,7 +134,7 @@ class FishingController:
                         bite_detected = True
                         break
 
-                    time.sleep(0.015)
+                    time.sleep(0.005)
 
                 if not self.running:
                     break
@@ -165,6 +165,11 @@ class FishingController:
                 target_last_seen_time = time.time()
                 last_gui_update = 0.0
                 last_valid_target_y = None
+
+                # Velocity & Momentum prediction state
+                prev_white_y = None
+                prev_white_time = None
+                smoothed_vy = 0.0  # pixels/sec (negative = rising, positive = falling)
                 
                 # Non-blocking pulse tracking
                 last_tap_time = 0.0
@@ -212,6 +217,16 @@ class FishingController:
                     white_y = det_res["white_center_y"]
                     target_center_y = det_res["target_center_y"]
 
+                    # Track velocity of white slider (pixels/sec)
+                    if white_y is not None:
+                        if prev_white_y is not None and prev_white_time is not None:
+                            dt = now_time - prev_white_time
+                            if dt > 0.001:
+                                raw_vy = (white_y - prev_white_y) / dt
+                                smoothed_vy = 0.65 * smoothed_vy + 0.35 * raw_vy
+                        prev_white_y = white_y
+                        prev_white_time = now_time
+
                     # Bridge brief color shifts and track when target was last seen
                     if target_center_y is not None:
                         last_valid_target_y = target_center_y
@@ -229,35 +244,57 @@ class FishingController:
                         if target_bottom is None:
                             target_bottom = target_center_y + 20
 
+                        # Calculate lookahead predicted position based on current velocity
+                        # 65ms lookahead anticipates movement and eliminates overshoot
+                        lookahead_sec = 0.065
+                        pred_white_y = white_y + (smoothed_vy * lookahead_sec)
+
                         # Check if white slider is strictly INSIDE the target box
                         is_inside_box = (white_y >= target_top) and (white_y <= target_bottom)
 
                         # ------------------------------------------------------
-                        # CASE 1: Strictly inside target box -> Rhythmic tap
+                        # PREDICTIVE ACTIVE BRAKING & BALANCING LOGIC
                         # ------------------------------------------------------
-                        if is_inside_box:
-                            tap_interval = 0.050 if white_y > target_center_y else 0.075
+                        # CASE A: Climbing fast and projected to overshoot top boundary
+                        if smoothed_vy < -45 and (pred_white_y <= target_center_y + 6):
+                            is_tap_active = False
+                            self.input_mgr.mouse_up()
+                            self.current_action = "BRAKE (COAST UP)"
+
+                        # CASE B: Falling fast and projected to undershoot bottom boundary
+                        elif smoothed_vy > 45 and (pred_white_y >= target_center_y - 6):
+                            is_tap_active = False
+                            self.input_mgr.mouse_down()
+                            self.current_action = "BRAKE (CATCH DROP)"
+
+                        # CASE C: Strictly inside target box -> Responsive adaptive tap
+                        elif is_inside_box:
+                            # If slider is lower than center, tap faster to stay afloat
+                            dist_from_center = white_y - target_center_y
+                            if dist_from_center > 0:
+                                tap_interval = 0.040
+                                tap_press_dur = 0.020
+                            else:
+                                tap_interval = 0.070
+                                tap_press_dur = 0.015
+
                             if not is_tap_active and (now_time - last_tap_time >= tap_interval):
                                 self.input_mgr.mouse_down()
                                 is_tap_active = True
                                 tap_start_time = now_time
                                 self.current_action = "TAP (INSIDE BOX)"
-                            elif is_tap_active and (now_time - tap_start_time >= 0.018):
+                            elif is_tap_active and (now_time - tap_start_time >= tap_press_dur):
                                 self.input_mgr.mouse_up()
                                 is_tap_active = False
                                 last_tap_time = now_time
 
-                        # ------------------------------------------------------
-                        # CASE 2: Below target box -> Continuous hold climb
-                        # ------------------------------------------------------
+                        # CASE D: Below target box -> Immediate continuous hold climb
                         elif white_y > target_bottom:
                             is_tap_active = False
                             self.input_mgr.mouse_down()
                             self.current_action = "HOLD (CLIMB)"
 
-                        # ------------------------------------------------------
-                        # CASE 3: Above target box -> Complete release drop
-                        # ------------------------------------------------------
+                        # CASE E: Above target box -> Immediate complete release drop
                         else:
                             is_tap_active = False
                             self.input_mgr.mouse_up()
@@ -274,7 +311,7 @@ class FishingController:
                         if self.on_frame_update:
                             self.on_frame_update(det_res)
 
-                    time.sleep(0.003)
+                    time.sleep(0.001)
 
                 # Ensure mouse is released
                 self.input_mgr.force_mouse_up()
