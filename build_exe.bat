@@ -6,7 +6,7 @@ echo ====================================================
 echo.
 
 py -m pip install pyinstaller
-py -m PyInstaller --clean --noconsole --onefile --add-data "white_slider_template.png;." --hidden-import "pynput.keyboard._win32" --hidden-import "pynput.mouse._win32" --name "EasySlayer" main.py
+py -m PyInstaller --clean --noconsole --onefile --add-data "white_slider_template.png;." --add-data "t_prompt_template.png;." --hidden-import "pynput.keyboard._win32" --hidden-import "pynput.mouse._win32" --hidden-import "winsdk" --name "EasySlayer" main.py
 
 if %ERRORLEVEL% EQU 0 (
     echo.
