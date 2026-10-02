@@ -476,7 +476,7 @@ class FishBarDetector:
 
             # Draw Target Zone (Glowing Golden/Cyan Box)
             if target_zone:
-                tx, ty, tw, th = target_zone
+                tx, ty, tw, th = int(target_zone[0]), int(target_zone[1]), int(target_zone[2]), int(target_zone[3])
                 cv2.rectangle(annotated, (tx, ty), (tx + tw, ty + th), (0, 255, 255), 2)
                 if target_center_y is not None:
                     cv2.circle(annotated, (int(tx + tw / 2), int(target_center_y)), 3, (0, 255, 255), -1)
@@ -485,7 +485,7 @@ class FishBarDetector:
 
             # Draw White Slider (Yellow/Green Box)
             if white_box:
-                wx, wy, ww, wh = white_box
+                wx, wy, ww, wh = int(white_box[0]), int(white_box[1]), int(white_box[2]), int(white_box[3])
                 cv2.rectangle(annotated, (wx, wy), (wx + ww, wy + wh), (255, 255, 0), 2)
                 if white_center_y is not None:
                     cv2.circle(annotated, (int(wx + ww / 2), int(white_center_y)), 3, (0, 0, 255), -1)

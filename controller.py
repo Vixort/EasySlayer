@@ -363,14 +363,14 @@ class FishingController:
                 if stuck_triggered or not fish_caught:
                     self.fish_failed_count += 1
                     if self.on_fish_caught:
-                        self.on_fish_caught(self.fish_count, "ตกไม่ได้ปลา", self.fish_counts, self.fish_failed_count)
+                        self.on_fish_caught(self.fish_count, "Fish Escaped", self.fish_counts, self.fish_failed_count)
                     if self.config.get("webhook_notify_on_fail", True):
                         self.webhook_mgr.send_failed_notification(
-                            reason="มินิเกมหมดเวลา / หลุด (Stuck/Lost)",
+                            reason="Minigame Timeout / Fish Lost",
                             total_caught=self.fish_count,
                             total_failed=self.fish_failed_count
                         )
-                    self.set_state(FishingState.RECOVERY, "ตกไม่ได้ปลา: recasting rod...")
+                    self.set_state(FishingState.RECOVERY, "Fish escaped: recasting rod...")
                     self.current_action = "RECOVERY_RECAST"
                     self.input_mgr.force_mouse_up()
                     self.detector.reset_tracking()
@@ -434,17 +434,17 @@ class FishingController:
                 if not t_found and not caught_name:
                     self.fish_failed_count += 1
                     if self.on_fish_caught:
-                        self.on_fish_caught(self.fish_count, "ตกไม่ได้ปลา", self.fish_counts, self.fish_failed_count)
+                        self.on_fish_caught(self.fish_count, "Fish Escaped", self.fish_counts, self.fish_failed_count)
 
                     if self.config.get("webhook_notify_on_fail", True):
                         self.webhook_mgr.send_failed_notification(
-                            reason="ปลาหลุด / ตกไม่ได้ปลา",
+                            reason="Fish Escaped / No Catch",
                             total_caught=self.fish_count,
                             total_failed=self.fish_failed_count,
                             image_bytes=fish_thumb_bytes
                         )
 
-                    self.set_state(FishingState.RECOVERY, "ตกไม่ได้ปลา (Fish Escaped) - Recasting...")
+                    self.set_state(FishingState.RECOVERY, "Fish escaped - Recasting rod...")
                     self.current_action = "RECOVERY_RECAST"
                     self.input_mgr.force_mouse_up()
                     self.detector.reset_tracking()

@@ -91,37 +91,37 @@ class DiscordWebhookManager:
         failure_rate = (total_failed / total_attempts * 100.0) if total_attempts > 0 else 100.0
 
         embed = {
-            "title": "❌ ตกไม่ได้ปลา (Fish Escaped)",
-            "description": f"สถานะ: **{reason}**",
+            "title": "❌ Catch Failed (Fish Escaped)",
+            "description": f"Status: **{reason}**",
             "color": 0xEF4444,  # Red alert color
             "fields": [
                 {
-                    "name": "⚠️ ผลลัพธ์",
-                    "value": "ตกไม่ได้ปลา",
+                    "name": "⚠️ Result",
+                    "value": "Fish Escaped / No Catch",
                     "inline": True
                 },
                 {
-                    "name": "🎯 รอบทั้งหมด",
+                    "name": "🎯 Total Attempts",
                     "value": f"{total_attempts}",
                     "inline": True
                 },
                 {
-                    "name": "📊 อัตราตกได้ (Win Rate)",
+                    "name": "📊 Success Rate",
                     "value": f"**{success_rate:.1f}%**",
                     "inline": True
                 },
                 {
-                    "name": "✅ ตกได้สำเร็จ",
-                    "value": f"{total_caught} ตัว",
+                    "name": "✅ Total Caught",
+                    "value": f"{total_caught} fish",
                     "inline": True
                 },
                 {
-                    "name": "❌ ตกพลาด/หลุด",
-                    "value": f"{total_failed} ครั้ง",
+                    "name": "❌ Total Failed",
+                    "value": f"{total_failed} lost",
                     "inline": True
                 },
                 {
-                    "name": "📉 อัตราตกพลาด",
+                    "name": "📉 Failure Rate",
                     "value": f"{failure_rate:.1f}%",
                     "inline": True
                 }
