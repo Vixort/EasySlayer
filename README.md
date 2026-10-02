@@ -1,13 +1,13 @@
 # EasySlayer
 
-> **High-Performance Autonomous Computer Vision Fishing Automation Suite**  
+> **High-Performance Autonomous Computer Vision Fishing Automation Suite for Roblox Slayer 2**  
 > Engineered with Python, OpenCV, Win32 SendInput, and a Sleek Floating Desktop HUD.
 
 ---
 
 ## Overview
 
-**EasySlayer** is a lightweight, high-performance automated fishing application designed for games featuring dynamic vertical-bar fishing minigames (such as Roblox fishing titles). Powered by dual-engine Computer Vision and hardware-level Windows input emulation, EasySlayer delivers pixel-perfect tracking, sub-millisecond reaction speeds, and hands-free automated cycles.
+**EasySlayer** is a lightweight, high-performance autonomous fishing automation suite purpose-built for **Roblox Slayer 2**. Powered by a multi-layer Computer Vision engine and hardware-level Windows input emulation, EasySlayer delivers pixel-perfect tracking, sub-millisecond reaction speeds, and 100% hands-free automated fishing cycles.
 
 ---
 
@@ -54,25 +54,29 @@
 graph TD
     P1[Process 1: Cast Rod] --> P2[Process 2: Wait for Bite]
     P2 -->|Minigame Bar Appears| P3[Process 3: Minigame Tracking & Balancing]
-    P3 -->|Minigame Bar Disappears| P4[Process 4: Fish Hooked & Grace Delay 1.5s]
-    P4 --> P5[Process 5: Hold T for 3.0s to Collect]
-    P5 --> P6[Cycle Cooldown: Wait 3.0s]
+    P3 -->|Minigame Bar Disappears| P4[Process 4: Identify Catch / Fish Name via OCR]
+    P4 --> P5[Process 5: Verified [T] Auto-Collect Loop]
+    P5 -->|Send Discord Webhook| P6[Process 6: Cooldown & Recast]
     P6 --> P1
 ```
 
 1. **Process 1: Cast Rod**
    * Dispatches a left-click cast into the fishing zone and allows the line to settle.
 2. **Process 2: Wait for Bite**
-   * Continuously scans the selected Region of Interest (ROI) at 60 FPS for the appearance of the fishing bar.
-3. **Process 3: Minigame Balancing**
-   * Computes the vertical distance between the player marker and the target zone.
-   * Dynamically switches between continuous holding, full release, and inside-box micro-tapping.
-4. **Process 4: Catch Confirmation & Post-Catch Grace Delay**
-   * Detects the completion of the minigame when the bar disappears.
-   * Pauses for a configurable 1.5-second grace delay to let the in-game catch animation finish.
-5. **Process 5: Collection & Recast Loop**
-   * Holds the collection key (`T`) for 3.0 seconds using hardware key pulses to claim the catch.
-   * Waits for a short cooldown period before recasting for the next fish.
+   * Continuously scans the selected Region of Interest (ROI) at high frequency for the appearance of the fishing bar.
+3. **Process 3: Predictive Minigame Balancing**
+   * Computes the vertical distance and velocity between the player marker and the target zone.
+   * Dynamically applies predictive active braking, continuous holding, full release, and adaptive inside-box micro-tapping.
+4. **Process 4: Catch Verification & Item / Fish OCR**
+   * Detects minigame completion when the slider disappears.
+   * Pauses for a configurable animation delay (`post_catch_delay`), then captures the catch area and performs in-memory OCR to identify the catch name (e.g., `Golden Fish`, `Iron`, etc.).
+   * If no catch occurred (fish escaped), marks the attempt as failed, dispatches failure telemetry, and immediately recasts.
+5. **Process 5: Verified Auto-Collect Loop ([T] Prompt)**
+   * Detects the in-game `[T]` interaction prompt.
+   * Holds `T` and continuously re-checks until the `[T]` prompt vanishes, guaranteeing successful collection even during network latency.
+   * Sends unclipped screenshot and session stats to Discord via Webhook.
+6. **Process 6: Cooldown & Recast Loop**
+   * Waits for the configured recast cooldown before starting the next autonomous cycle.
 
 ---
 

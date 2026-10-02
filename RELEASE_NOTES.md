@@ -10,7 +10,7 @@
 
 **EasySlayer v2.0.0** is a major milestone release delivering a comprehensive overhaul to the computer vision pipeline, physics balancing algorithms, automated collection verification, and Discord telemetry integration.
 
-Designed specifically for challenging in-game conditions in Roblox fishing titles, v2.0.0 eliminates tracking failures caused by multi-colored, translucent, or dynamic environments, introduces predictive momentum control to prevent overshoots, and provides complete hands-free operation with Discord reporting.
+Designed specifically for challenging in-game conditions in **Roblox Slayer 2**, v2.0.0 eliminates tracking failures caused by multi-colored, translucent, or dynamic environments, introduces predictive momentum control to prevent overshoots, and provides complete hands-free operation with Discord reporting.
 
 ---
 
