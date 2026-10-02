@@ -45,12 +45,12 @@ DEFAULT_CONFIG = {
     
     # Color thresholds (HSV)
     # Universal Target detection (Green, Yellow, Orange, Red, Blue, Purple)
-    "target_min_sat": 65,
-    "target_min_val": 120,
+    "target_min_sat": 45,
+    "target_min_val": 70,
     
     # White slider indicator (Player Marker)
-    "white_hsv_lower": [0, 0, 170],
-    "white_hsv_upper": [180, 65, 255],
+    "white_hsv_lower": [0, 0, 165],
+    "white_hsv_upper": [180, 85, 255],
     
     # Hotkeys
     "hotkey_toggle": "F6",

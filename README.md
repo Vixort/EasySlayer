@@ -14,20 +14,21 @@
 ## Best Practices for Maximum Vision Accuracy
 
 > [!TIP]
-> **Pro Tip: Use a Solid, Single-Color Background for the In-Game UI**  
-> For optimal Computer Vision performance, adjust your in-game camera angle so that the vertical fishing bar appears over a **solid, uniform background** (such as deep calm water, clear dark sky, or an empty solid surface).  
+> **Adaptive Multi-Strategy Vision Engine (Any-Background Support)**  
+> EasySlayer features a robust multi-layer Computer Vision architecture engineered specifically to handle **complex, multi-colored, and translucent in-game backgrounds** (such as shimmering ocean water, colorful coral reefs, grassy terrain, sand, neon lighting, or rapid lighting changes).
 > 
-> **Why this helps:**  
-> The vision pipeline isolates the moving player marker and the chromatic target zone using high-contrast saturation and brightness masks. Highly detailed backgrounds (busy terrain, moving NPCs, water shimmer, grass, or bright torches) can introduce visual noise. Placing the minigame UI against a clean, single-color backdrop guarantees 99.9% detection reliability and eliminates tracking drops during rapid color shifts.
+> **How it works:**  
+> The vision pipeline automatically isolates the vertical bar track column from surrounding screen noise, detects target boundaries via Sobel horizontal gradient edge pairs, and utilizes adaptive differential contrast alongside normalized template matching. You no longer need to restrict your camera to a single solid background color!
 
 ---
 
 ## Features & System Architecture
 
-### 1. Dual-Engine Computer Vision Pipeline
-* **Normalized Cross-Correlation (NCC) Marker Matching:** Uses a calibrated reference template (`white_slider_template.png`, 26x29 px) to lock onto the white player marker with extreme accuracy. A strict confidence threshold (>= 0.80) prevents false positives from ambient glares.
-* **Universal Chromatic Glow Detection:** Real-time tracking of the target capture zone across shifting colors (Green, Yellow, Orange, Red, Blue, Purple) using HSV saturation and luminance filtering.
-* **Multi-Frame Persistence:** A 12-frame history buffer maintains target continuity during rapid hue transitions.
+### 1. Multi-Layer Computer Vision Pipeline
+* **Bar Column Isolation & Tracking:** Automatically locks onto the vertical bar track using spatial memory, stripping out 100% of distracting world background noise (waves, terrain, foliage, NPCs) outside the bar.
+* **Dual-Strategy Target Zone Detection:** Combines Sobel-Y horizontal boundary gradient edge-pair detection with adaptive chromatic segmentation and differential row contrast. Accurately pinpoints the fish target zone regardless of background colors, translucency, or rapid color transitions.
+* **Normalized Cross-Correlation (NCC) Marker Matching:** Uses calibrated template matching (`white_slider_template.png`) and bar-constrained high-luminance fallback to track the player marker smoothly even when overlapping colored target zones.
+* **Multi-Frame Persistence:** A 12-frame history buffer maintains target continuity during rapid hue transitions or momentary occlusions.
 
 ### 2. Smart Hybrid Physics & Mouse Balancing
 * **Ascent Dynamics (`HOLD (CLIMB)`):** Automatically executes a continuous left-click hold when the player marker is below the target zone, climbing against gravity.
