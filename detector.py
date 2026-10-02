@@ -1,9 +1,20 @@
 import os
 import sys
+import re
+import asyncio
 import cv2
 import numpy as np
 
+try:
+    from winsdk.windows.media.ocr import OcrEngine
+    from winsdk.windows.graphics.imaging import BitmapDecoder
+    from winsdk.windows.storage.streams import InMemoryRandomAccessStream, DataWriter
+    HAS_WINSDK_OCR = True
+except Exception:
+    HAS_WINSDK_OCR = False
+
 TEMPLATE_FILE = "white_slider_template.png"
+T_PROMPT_TEMPLATE_FILE = "t_prompt_template.png"
 
 def resolve_resource_path(filename):
     """
@@ -509,3 +520,144 @@ class FishBarDetector:
             "target_center_y": None,
             "annotated_frame": frame
         }
+
+class FishCatchDetector:
+    """
+    Dedicated Detector for:
+    1. Fish Name Recognition (using Windows Native Media OCR)
+    2. [T] Interaction Prompt Verification & Auto-Collect Loop
+    """
+    def __init__(self, config=None):
+        self.config = config or {}
+        self.t_tmpl_gray = None
+        self.t_tmpl_w = 44
+        self.t_tmpl_h = 43
+        self._load_template()
+
+        self.ocr_engine = None
+        if HAS_WINSDK_OCR:
+            try:
+                self.ocr_engine = OcrEngine.try_create_from_user_profile_languages()
+            except Exception as e:
+                print(f"Notice: Could not initialize Windows OCR: {e}")
+
+    def _load_template(self):
+        tmpl_path = resolve_resource_path(T_PROMPT_TEMPLATE_FILE)
+        if os.path.exists(tmpl_path):
+            try:
+                tmpl = cv2.imread(tmpl_path)
+                if tmpl is not None:
+                    self.t_tmpl_gray = cv2.cvtColor(tmpl, cv2.COLOR_BGR2GRAY)
+                    self.t_tmpl_h, self.t_tmpl_w = self.t_tmpl_gray.shape[:2]
+            except Exception as e:
+                print(f"Notice: Could not load [T] prompt template {tmpl_path}: {e}")
+
+    def update_config(self, config):
+        self.config = config
+
+    def detect_t_prompt(self, bgr_frame, threshold=0.68, scales=(0.8, 0.9, 1.0, 1.1, 1.25)):
+        """
+        Detects the [T] interaction button prompt anywhere in the frame using multi-scale matching.
+        Returns: (found: bool, confidence: float, box: (x, y, w, h), center: (cx, cy))
+        """
+        if self.t_tmpl_gray is None or bgr_frame is None or bgr_frame.size == 0:
+            return False, 0.0, None, None
+
+        fh, fw = bgr_frame.shape[:2]
+        gray = cv2.cvtColor(bgr_frame, cv2.COLOR_BGR2GRAY)
+
+        best_val = 0.0
+        best_box = None
+        best_center = None
+
+        for s in scales:
+            sw = int(self.t_tmpl_w * s)
+            sh = int(self.t_tmpl_h * s)
+            if sh > fh or sw > fw:
+                continue
+
+            resized_tmpl = cv2.resize(self.t_tmpl_gray, (sw, sh),
+                                      interpolation=cv2.INTER_AREA if s < 1.0 else cv2.INTER_LINEAR)
+            res = cv2.matchTemplate(gray, resized_tmpl, cv2.TM_CCOEFF_NORMED)
+            _, max_val, _, max_loc = cv2.minMaxLoc(res)
+
+            if max_val > best_val:
+                best_val = float(max_val)
+                bx, by = max_loc
+                best_box = (bx, by, sw, sh)
+                best_center = (bx + sw / 2.0, by + sh / 2.0)
+
+        if best_val >= threshold:
+            return True, best_val, best_box, best_center
+        return False, best_val, None, None
+
+    def clean_fish_name(self, raw_text):
+        """
+        Cleans OCR text to extract the actual fish name.
+        E.g. 'Golden Fish Caught' or 'Golden Fish Collect' -> 'Golden Fish'
+        """
+        if not raw_text:
+            return None
+
+        # Filter out common UI labels
+        lines = [l.strip() for l in raw_text.splitlines() if l.strip()]
+        for line in lines:
+            # Remove keywords like Caught, Collect, Hold, Press, Keep, etc.
+            cleaned = re.sub(r'(?i)\b(caught|collect|collecting|hold|press|to|keep|new|sell|backpack|kg|lbs|weight|size)\b', '', line)
+            cleaned = re.sub(r'[^a-zA-Z0-9\s\-\'\.]', '', cleaned).strip()
+            # Must contain letters and be reasonably long
+            if len(cleaned) >= 3 and any(c.isalpha() for c in cleaned):
+                # Clean up multiple spaces
+                cleaned = re.sub(r'\s+', ' ', cleaned)
+                return cleaned
+        return None
+
+    def recognize_fish_name(self, bgr_frame, prompt_box=None):
+        """
+        Runs Windows Native Media OCR on in-memory frame buffer to extract fish name.
+        If prompt_box (x, y, w, h) of [T] is given, focuses on the banner above the prompt.
+        Takes ~3-5ms without touching disk.
+        """
+        if not HAS_WINSDK_OCR or self.ocr_engine is None or bgr_frame is None or bgr_frame.size == 0:
+            return None
+
+        fh, fw = bgr_frame.shape[:2]
+        crop_target = bgr_frame
+
+        # If [T] prompt location is provided, the catch banner ("Fish Name Caught") is positioned directly above it
+        if prompt_box is not None:
+            bx, by, bw, bh = prompt_box
+            rx1 = max(0, int(bx - 170))
+            rx2 = min(fw, int(bx + bw + 170))
+            ry1 = max(0, int(by - 140))
+            ry2 = min(fh, int(by + 15))
+            if ry2 > ry1 and rx2 > rx1:
+                crop_target = bgr_frame[ry1:ry2, rx1:rx2]
+
+        success, buffer = cv2.imencode('.png', crop_target)
+        if not success:
+            return None
+
+        async def _run_ocr():
+            try:
+                stream = InMemoryRandomAccessStream()
+                writer = DataWriter(stream.get_output_stream_at(0))
+                writer.write_bytes(buffer.tobytes())
+                await writer.store_async()
+                decoder = await BitmapDecoder.create_async(stream)
+                bitmap = await decoder.get_software_bitmap_async()
+                res = await self.ocr_engine.recognize_async(bitmap)
+                return res.text
+            except Exception:
+                return ""
+
+        try:
+            raw_text = asyncio.run(_run_ocr())
+            name = self.clean_fish_name(raw_text)
+            # If cropped banner gave nothing and we had a prompt box, fallback to searching whole frame
+            if not name and prompt_box is not None:
+                return self.recognize_fish_name(bgr_frame, prompt_box=None)
+            return name
+        except Exception:
+            return None
+

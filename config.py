@@ -28,11 +28,15 @@ DEFAULT_CONFIG = {
     "stuck_minigame_timeout": 35.0,     # Max duration (s) in minigame before forced recovery
     "stuck_target_lost_timeout": 6.0,   # Max duration (s) target is lost during minigame before recovery
     
-    # Process 5: Fish collection & loop
-    "post_catch_delay": 1.5,            # Grace delay (s) after minigame ends before collecting
+    # Process 5: Fish collection & verification loop
+    "post_catch_delay": 0.8,            # Initial grace delay (s) after minigame ends
     "hold_t_key": "t",
-    "hold_t_duration": 3.0,             # Duration (s) to hold interaction key
-    "delay_before_recast": 3.0,         # Cooldown (s) before looping back to Process 1
+    "hold_t_duration": 2.2,             # Duration (s) to hold interaction key per attempt
+    "auto_verify_collect": True,        # Verify [T] prompt disappears before proceeding, retry if still present
+    "t_prompt_timeout": 5.0,            # Max wait time (s) for [T] prompt to appear
+    "t_retry_limit": 5,                 # Max retry attempts to hold [T] if prompt remains
+    "ocr_fish_name_enabled": True,      # Scan for caught fish name using Windows OCR
+    "delay_before_recast": 2.5,         # Cooldown (s) before looping back to Process 1
     
     # ROI & Screen capture
     "roi": {

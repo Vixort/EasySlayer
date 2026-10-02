@@ -2,7 +2,7 @@ import time
 import threading
 import mss
 import numpy as np
-from detector import FishBarDetector
+from detector import FishBarDetector, FishCatchDetector
 from input_manager import InputManager
 
 class FishingState:
@@ -23,17 +23,21 @@ class FishingController:
         self.on_fish_caught = on_fish_caught
 
         self.detector = FishBarDetector(config)
+        self.catch_detector = FishCatchDetector(config)
         self.input_mgr = InputManager()
         
         self.running = False
         self.thread = None
         self.state = FishingState.STOPPED
         self.fish_count = 0
+        self.last_fish_name = "None"
+        self.fish_counts = {}
         self.current_action = "NONE"
 
     def update_config(self, new_config):
         self.config = new_config
         self.detector.update_config(new_config)
+        self.catch_detector.update_config(new_config)
 
     def set_state(self, state, details=""):
         self.state = state
@@ -64,8 +68,10 @@ class FishingController:
 
     def reset_stats(self):
         self.fish_count = 0
+        self.last_fish_name = "None"
+        self.fish_counts = {}
         if self.on_fish_caught:
-            self.on_fish_caught(0)
+            self.on_fish_caught(0, "None", {})
 
     def _sleep_interruptible(self, duration):
         """High-resolution interruptible sleep"""
@@ -81,6 +87,22 @@ class FishingController:
             "height": int(roi["height"])
         }
         sct_img = sct.grab(monitor)
+        frame = np.array(sct_img, dtype=np.uint8)
+        return frame[:, :, :3]
+
+    def _grab_center_screen_frame(self, sct):
+        """Grabs the central 70% x 70% viewport of the primary monitor for prompt & fish name OCR"""
+        try:
+            mon = sct.monitors[1]
+        except Exception:
+            mon = sct.monitors[0]
+
+        w = int(mon["width"] * 0.70)
+        h = int(mon["height"] * 0.70)
+        left = mon["left"] + int((mon["width"] - w) / 2)
+        top = mon["top"] + int((mon["height"] - h) / 2)
+        region = {"left": left, "top": top, "width": w, "height": h}
+        sct_img = sct.grab(region)
         frame = np.array(sct_img, dtype=np.uint8)
         return frame[:, :, :3]
 
@@ -327,28 +349,82 @@ class FishingController:
                     self._sleep_interruptible(0.8)
                     continue
 
-                # Count fish caught
-                self.fish_count += 1
-                if self.on_fish_caught:
-                    self.on_fish_caught(self.fish_count)
-
-                # Process 4 -> 5 Delay: Grace period for catch animation
-                post_catch_delay = self.config.get("post_catch_delay", 1.5)
-                self.current_action = f"WAIT_{post_catch_delay}S"
-                self.set_state(FishingState.COLLECTING, f"Fish caught! Waiting {post_catch_delay}s before collecting...")
+                # ==============================================================
+                # Process 4: Recognize Caught Fish Name & Detect [T] Prompt
+                # ==============================================================
+                post_catch_delay = self.config.get("post_catch_delay", 0.8)
+                self.current_action = "DETECT_CATCH"
+                self.set_state(FishingState.COLLECTING, "Fish hooked! Identifying catch...")
                 self._sleep_interruptible(post_catch_delay)
                 if not self.running:
                     break
 
-                # ==============================================================
-                # Process 5: Hold T key for 3.0s to collect fish
-                # ==============================================================
-                hold_t_time = self.config.get("hold_t_duration", 3.0)
                 t_key = self.config.get("hold_t_key", "t")
-                self.current_action = f"HOLD_{t_key.upper()}"
-                self.set_state(FishingState.COLLECTING, f"Holding '{t_key.upper()}' for {hold_t_time}s to collect fish...")
-                
-                self.input_mgr.hold_key(t_key, hold_t_time, is_running_check=lambda: self.running, repeat_interval=0.05)
+                hold_t_time = self.config.get("hold_t_duration", 2.2)
+                auto_verify = self.config.get("auto_verify_collect", True)
+                t_timeout = self.config.get("t_prompt_timeout", 5.0)
+                max_retries = self.config.get("t_retry_limit", 5)
+
+                caught_name = "Unknown Fish"
+                t_found = False
+                t_box = None
+
+                # Scan for [T] prompt and recognize fish name
+                scan_start = time.time()
+                while self.running and (time.time() - scan_start < t_timeout):
+                    screen_frame = self._grab_center_screen_frame(sct)
+                    t_found, t_conf, t_box, _ = self.catch_detector.detect_t_prompt(screen_frame)
+
+                    if self.config.get("ocr_fish_name_enabled", True) and caught_name == "Unknown Fish":
+                        detected_name = self.catch_detector.recognize_fish_name(screen_frame, prompt_box=t_box)
+                        if detected_name:
+                            caught_name = detected_name
+
+                    if t_found:
+                        break
+                    time.sleep(0.08)
+
+                if not self.running:
+                    break
+
+                # Count fish caught and record fish type
+                self.fish_count += 1
+                self.last_fish_name = caught_name
+                self.fish_counts[caught_name] = self.fish_counts.get(caught_name, 0) + 1
+                if self.on_fish_caught:
+                    self.on_fish_caught(self.fish_count, self.last_fish_name, self.fish_counts)
+
+                # ==============================================================
+                # Process 5: Verified Auto-Collect Loop (Hold T until prompt disappears)
+                # ==============================================================
+                if auto_verify:
+                    attempt = 0
+                    while self.running and attempt < max_retries:
+                        attempt += 1
+                        self.current_action = f"HOLD_{t_key.upper()} ({attempt}/{max_retries})"
+                        self.set_state(FishingState.COLLECTING, f"Holding '{t_key.upper()}' for {caught_name} (Try {attempt}/{max_retries})...")
+
+                        self.input_mgr.hold_key(t_key, hold_t_time, is_running_check=lambda: self.running, repeat_interval=0.05)
+                        if not self.running:
+                            break
+
+                        # Wait briefly for in-game collection animation
+                        self._sleep_interruptible(0.35)
+
+                        # Re-scan to verify if [T] prompt is still on screen
+                        screen_frame = self._grab_center_screen_frame(sct)
+                        t_still_there, _, _, _ = self.catch_detector.detect_t_prompt(screen_frame)
+                        if not t_still_there:
+                            self.set_state(FishingState.COLLECTING, f"Collected: {caught_name}!")
+                            break
+                        else:
+                            self.set_state(FishingState.COLLECTING, f"[T] still visible! Retrying collect ({attempt}/{max_retries})...")
+                            self._sleep_interruptible(0.2)
+                else:
+                    self.current_action = f"HOLD_{t_key.upper()}"
+                    self.set_state(FishingState.COLLECTING, f"Holding '{t_key.upper()}' to collect {caught_name}...")
+                    self.input_mgr.hold_key(t_key, hold_t_time, is_running_check=lambda: self.running, repeat_interval=0.05)
+                    self._sleep_interruptible(0.5)
 
                 if not self.running:
                     break
@@ -356,7 +432,7 @@ class FishingController:
                 # ==============================================================
                 # Process 5 -> 1: Cooldown before starting next cycle
                 # ==============================================================
-                recast_delay = self.config.get("delay_before_recast", 3.0)
+                recast_delay = self.config.get("delay_before_recast", 2.5)
                 self.current_action = "COOLDOWN"
                 self.set_state(FishingState.COOLDOWN, f"Cooldown: waiting {recast_delay}s before next cast...")
                 self._sleep_interruptible(recast_delay)

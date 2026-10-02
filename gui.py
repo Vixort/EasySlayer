@@ -47,8 +47,8 @@ class ModernFishingGUI:
 
         # Initial geometry (compact)
         self.is_expanded = False
-        self.compact_size = (470, 245)
-        self.expanded_size = (470, 595)
+        self.compact_size = (480, 265)
+        self.expanded_size = (480, 680)
         self.root.geometry(f"{self.compact_size[0]}x{self.compact_size[1]}+30+60")
 
         # Dragging state
@@ -174,7 +174,7 @@ class ModernFishingGUI:
         self.lbl_fish_count.pack(side=tk.RIGHT)
 
         # Telemetry Card
-        tele_frame = tk.Frame(right_panel, bg="#101422", padx=10, pady=6, highlightbackground="#1E2438", highlightthickness=1)
+        tele_frame = tk.Frame(right_panel, bg="#101422", padx=10, pady=5, highlightbackground="#1E2438", highlightthickness=1)
         tele_frame.pack(fill=tk.X, pady=(0, 6))
 
         self.lbl_telemetry = tk.Label(
@@ -185,9 +185,15 @@ class ModernFishingGUI:
 
         self.lbl_action = tk.Label(
             tele_frame, text="Mouse: Release",
-            font=("Segoe UI", 9, "bold"), fg="#94A3B8", bg="#101422", anchor="w"
+            font=("Segoe UI", 8, "bold"), fg="#94A3B8", bg="#101422", anchor="w"
         )
         self.lbl_action.pack(fill=tk.X)
+
+        self.lbl_last_fish = tk.Label(
+            tele_frame, text="Last Catch: None",
+            font=("Segoe UI", 8, "bold"), fg="#FACC15", bg="#101422", anchor="w"
+        )
+        self.lbl_last_fish.pack(fill=tk.X)
 
         # Action Buttons Grid
         btn_grid = tk.Frame(right_panel, bg="#0B0D14")
@@ -315,6 +321,25 @@ class ModernFishingGUI:
         self.scale_alpha.set(94)
         self.scale_alpha.pack(side=tk.RIGHT)
 
+        # Advanced Collection Options
+        self.auto_verify_var = tk.BooleanVar(value=self.cfg.get("auto_verify_collect", True))
+        self.chk_auto_verify = tk.Checkbutton(
+            self.settings_panel, text="Auto-Verify [T] Prompt (Retry until collected)",
+            variable=self.auto_verify_var,
+            font=("Segoe UI", 8), fg="#38BDF8", bg="#111420",
+            selectcolor="#0B0D14", activebackground="#111420", activeforeground="#38BDF8"
+        )
+        self.chk_auto_verify.pack(anchor="w", pady=(4, 2))
+
+        self.ocr_fish_var = tk.BooleanVar(value=self.cfg.get("ocr_fish_name_enabled", True))
+        self.chk_ocr_fish = tk.Checkbutton(
+            self.settings_panel, text="Identify Caught Fish Name (Windows OCR)",
+            variable=self.ocr_fish_var,
+            font=("Segoe UI", 8), fg="#38BDF8", bg="#111420",
+            selectcolor="#0B0D14", activebackground="#111420", activeforeground="#38BDF8"
+        )
+        self.chk_ocr_fish.pack(anchor="w", pady=(2, 2))
+
         # Target Frame checkbox
         self.chk_hud = tk.Checkbutton(
             self.settings_panel, text="Show green HUD border on in-game bar",
@@ -322,7 +347,14 @@ class ModernFishingGUI:
             font=("Segoe UI", 8), fg="#38BDF8", bg="#111420",
             selectcolor="#0B0D14", activebackground="#111420", activeforeground="#38BDF8"
         )
-        self.chk_hud.pack(anchor="w", pady=(6, 4))
+        self.chk_hud.pack(anchor="w", pady=(2, 4))
+
+        # Catch History Summary Label
+        f_hist = tk.Frame(self.settings_panel, bg="#0F172A", padx=6, pady=4, highlightbackground="#1E293B", highlightthickness=1)
+        f_hist.pack(fill=tk.X, pady=(2, 6))
+        tk.Label(f_hist, text="Session Catch Log:", font=("Segoe UI", 8, "bold"), fg="#94A3B8", bg="#0F172A").pack(anchor="w")
+        self.lbl_history = tk.Label(f_hist, text="No catches yet", font=("Segoe UI", 7), fg="#E2E8F0", bg="#0F172A", justify=tk.LEFT, wraplength=440)
+        self.lbl_history.pack(anchor="w", pady=(2, 0))
 
         # Save Button
         btn_save = tk.Button(
@@ -389,6 +421,8 @@ class ModernFishingGUI:
             self.cfg["target_min_val"] = int(self.spn_val.get())
             self.cfg["stuck_minigame_timeout"] = float(self.spn_stuck_mg.get())
             self.cfg["stuck_target_lost_timeout"] = float(self.spn_stuck_lost.get())
+            self.cfg["auto_verify_collect"] = bool(self.auto_verify_var.get())
+            self.cfg["ocr_fish_name_enabled"] = bool(self.ocr_fish_var.get())
             config.save_config(self.cfg)
             self.controller.update_config(self.cfg)
             play_sound_async(1200, 80)
@@ -420,6 +454,9 @@ class ModernFishingGUI:
         self.controller.reset_stats()
         self.start_time = None
         self.lbl_fish_count.config(text="0 Fish")
+        self.lbl_last_fish.config(text="Last Catch: None")
+        if hasattr(self, "lbl_history"):
+            self.lbl_history.config(text="No catches yet")
         self.lbl_uptime.config(text="00:00:00", fg="#64748B")
         self.on_status_change(FishingState.IDLE, "Reset completed")
 
@@ -444,8 +481,15 @@ class ModernFishingGUI:
         if state != FishingState.MINIGAME and hasattr(self, "lbl_action"):
             self.lbl_action.config(text=f"Action: {self.controller.current_action}", fg="#38BDF8")
 
-    def on_fish_caught(self, count):
-        self.root.after(0, lambda: self.lbl_fish_count.config(text=f"{count} Fish"))
+    def on_fish_caught(self, count, fish_name=None, stats=None):
+        def _update():
+            self.lbl_fish_count.config(text=f"{count} Fish")
+            if fish_name:
+                self.lbl_last_fish.config(text=f"Last: {fish_name} 🐟")
+            if hasattr(self, "lbl_history") and stats:
+                summary_lines = [f"{k}: {v}" for k, v in stats.items()]
+                self.lbl_history.config(text=" | ".join(summary_lines))
+        self.root.after(0, _update)
         play_sound_async(1600, 100)
 
     def on_frame_update(self, det_res):
