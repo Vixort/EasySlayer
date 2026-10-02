@@ -134,8 +134,9 @@ Click the **`Settings`** button on the HUD to expand the configuration panel. Se
 | **Target Brightness (Val)** | `120` | Minimum brightness (0-255) for detecting glowing target zones. |
 | **Target Saturation (Sat)** | `65` | Minimum color saturation (0-255) to separate the target zone from greyscale background elements. |
 | **Bite Wait Timeout (s)** | `60.0` | Maximum time to wait for a fish bite before automatically recasting. |
-| **Stuck Minigame Timeout (s)** | `35.0` | Maximum duration allowed in minigame before triggering forced recovery click and recasting. |
-| **Target Lost Timeout (s)** | `6.0` | Maximum consecutive seconds target/fish is lost during minigame before triggering recovery recast. |
+| **Auto-Verify [T] Prompt** | `True` | Continuously detects the `[T]` prompt and retries holding `T` until the prompt disappears, ensuring reliable collection. |
+| **Identify Caught Fish (OCR)** | `True` | Reads and logs caught fish names (e.g., "Golden Fish") using Windows Native OCR without third-party tools. |
+| **Discord Webhook** | `Enabled / URL` | Sends rich embeds to your Discord channel with the caught fish photo, statistics, and success/failure rates. |
 
 ---
 

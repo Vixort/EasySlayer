@@ -4,6 +4,7 @@ import mss
 import numpy as np
 from detector import FishBarDetector, FishCatchDetector
 from input_manager import InputManager
+from webhook_manager import DiscordWebhookManager
 
 class FishingState:
     STOPPED = "STOPPED"
@@ -25,11 +26,13 @@ class FishingController:
         self.detector = FishBarDetector(config)
         self.catch_detector = FishCatchDetector(config)
         self.input_mgr = InputManager()
+        self.webhook_mgr = DiscordWebhookManager(config)
         
         self.running = False
         self.thread = None
         self.state = FishingState.STOPPED
         self.fish_count = 0
+        self.fish_failed_count = 0
         self.last_fish_name = "None"
         self.fish_counts = {}
         self.current_action = "NONE"
@@ -38,6 +41,7 @@ class FishingController:
         self.config = new_config
         self.detector.update_config(new_config)
         self.catch_detector.update_config(new_config)
+        self.webhook_mgr.update_config(new_config)
 
     def set_state(self, state, details=""):
         self.state = state
@@ -68,10 +72,11 @@ class FishingController:
 
     def reset_stats(self):
         self.fish_count = 0
+        self.fish_failed_count = 0
         self.last_fish_name = "None"
         self.fish_counts = {}
         if self.on_fish_caught:
-            self.on_fish_caught(0, "None", {})
+            self.on_fish_caught(0, "None", {}, 0)
 
     def _sleep_interruptible(self, duration):
         """High-resolution interruptible sleep"""
@@ -341,6 +346,9 @@ class FishingController:
 
                 # If recovery was triggered or fish was not hooked, directly loop back to recast (Single click)
                 if stuck_triggered or not fish_caught:
+                    self.fish_failed_count += 1
+                    if self.on_fish_caught:
+                        self.on_fish_caught(self.fish_count, self.last_fish_name, self.fish_counts, self.fish_failed_count)
                     self.set_state(FishingState.RECOVERY, "Resetting: recasting rod...")
                     self.current_action = "RECOVERY_RECAST"
                     self.input_mgr.force_mouse_up()
@@ -391,7 +399,16 @@ class FishingController:
                 self.last_fish_name = caught_name
                 self.fish_counts[caught_name] = self.fish_counts.get(caught_name, 0) + 1
                 if self.on_fish_caught:
-                    self.on_fish_caught(self.fish_count, self.last_fish_name, self.fish_counts)
+                    self.on_fish_caught(self.fish_count, self.last_fish_name, self.fish_counts, self.fish_failed_count)
+
+                # Extract small fish screenshot for Discord webhook
+                fish_thumb_bytes = self.catch_detector.extract_fish_thumbnail(screen_frame, prompt_box=t_box)
+                self.webhook_mgr.send_catch_notification(
+                    fish_name=caught_name,
+                    total_caught=self.fish_count,
+                    total_failed=self.fish_failed_count,
+                    image_bytes=fish_thumb_bytes
+                )
 
                 # ==============================================================
                 # Process 5: Verified Auto-Collect Loop (Hold T until prompt disappears)

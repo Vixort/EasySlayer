@@ -59,7 +59,13 @@ DEFAULT_CONFIG = {
     # Hotkeys
     "hotkey_toggle": "F6",
     "hotkey_select_roi": "F7",
-    "hotkey_emergency_stop": "F8"
+    "hotkey_emergency_stop": "F8",
+    
+    # Discord Webhook Notification
+    "webhook_url": "",
+    "webhook_enabled": False,
+    "webhook_notify_on_catch": True,
+    "webhook_notify_on_fail": False
 }
 
 def load_config():

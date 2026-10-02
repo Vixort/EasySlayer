@@ -48,7 +48,7 @@ class ModernFishingGUI:
         # Initial geometry (compact)
         self.is_expanded = False
         self.compact_size = (480, 265)
-        self.expanded_size = (480, 680)
+        self.expanded_size = (480, 770)
         self.root.geometry(f"{self.compact_size[0]}x{self.compact_size[1]}+30+60")
 
         # Dragging state
@@ -349,6 +349,35 @@ class ModernFishingGUI:
         )
         self.chk_hud.pack(anchor="w", pady=(2, 4))
 
+        # Discord Webhook Notification Section
+        f_wh_title = tk.Frame(self.settings_panel, bg="#111420")
+        f_wh_title.pack(fill=tk.X, pady=(6, 2))
+        tk.Label(f_wh_title, text="Discord Webhook Notifications", font=("Segoe UI", 9, "bold"), fg="#38BDF8", bg="#111420").pack(side=tk.LEFT)
+
+        self.webhook_enabled_var = tk.BooleanVar(value=self.cfg.get("webhook_enabled", False))
+        self.chk_webhook = tk.Checkbutton(
+            f_wh_title, text="Enable", variable=self.webhook_enabled_var,
+            font=("Segoe UI", 8, "bold"), fg="#10B981", bg="#111420", selectcolor="#0B0D14",
+            activebackground="#111420", activeforeground="#10B981"
+        )
+        self.chk_webhook.pack(side=tk.RIGHT)
+
+        f_wh_url = tk.Frame(self.settings_panel, bg="#111420")
+        f_wh_url.pack(fill=tk.X, pady=2)
+        tk.Label(f_wh_url, text="Webhook URL:", font=("Segoe UI", 8), fg="#E2E8F0", bg="#111420").pack(side=tk.LEFT)
+        self.entry_webhook_url = tk.Entry(f_wh_url, bg="#1E2337", fg="#FFFFFF", insertbackground="#FFFFFF", font=("Segoe UI", 8))
+        self.entry_webhook_url.insert(0, self.cfg.get("webhook_url", ""))
+        self.entry_webhook_url.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(6, 0))
+
+        f_wh_actions = tk.Frame(self.settings_panel, bg="#111420")
+        f_wh_actions.pack(fill=tk.X, pady=(2, 6))
+        self.btn_test_webhook = tk.Button(
+            f_wh_actions, text="🔔 Test Webhook", font=("Segoe UI", 8),
+            bg="#374151", fg="#FFFFFF", activebackground="#4B5563", activeforeground="#FFFFFF",
+            relief="flat", pady=2, padx=8, cursor="hand2", command=self.action_test_webhook
+        )
+        self.btn_test_webhook.pack(side=tk.RIGHT)
+
         # Catch History Summary Label
         f_hist = tk.Frame(self.settings_panel, bg="#0F172A", padx=6, pady=4, highlightbackground="#1E293B", highlightthickness=1)
         f_hist.pack(fill=tk.X, pady=(2, 6))
@@ -423,11 +452,32 @@ class ModernFishingGUI:
             self.cfg["stuck_target_lost_timeout"] = float(self.spn_stuck_lost.get())
             self.cfg["auto_verify_collect"] = bool(self.auto_verify_var.get())
             self.cfg["ocr_fish_name_enabled"] = bool(self.ocr_fish_var.get())
+            self.cfg["webhook_enabled"] = bool(self.webhook_enabled_var.get())
+            self.cfg["webhook_url"] = self.entry_webhook_url.get().strip()
             config.save_config(self.cfg)
             self.controller.update_config(self.cfg)
             play_sound_async(1200, 80)
         except Exception:
             pass
+
+    def action_test_webhook(self):
+        url = self.entry_webhook_url.get().strip()
+        if not url:
+            messagebox.showwarning("Discord Webhook", "Please enter a valid Discord Webhook URL first!")
+            return
+        
+        self.btn_test_webhook.config(text="Sending...", state=tk.DISABLED)
+        
+        def _on_test_done(success, msg):
+            def _gui_cb():
+                self.btn_test_webhook.config(text="🔔 Test Webhook", state=tk.NORMAL)
+                if success:
+                    messagebox.showinfo("Discord Webhook", "Webhook test message sent successfully! Check your Discord channel.")
+                else:
+                    messagebox.showerror("Discord Webhook", f"Failed to send webhook:\n{msg}")
+            self.root.after(0, _gui_cb)
+
+        self.controller.webhook_mgr.send_test_message(url, callback=_on_test_done)
 
     def action_start(self):
         roi = self.cfg.get("roi", {})
@@ -481,14 +531,19 @@ class ModernFishingGUI:
         if state != FishingState.MINIGAME and hasattr(self, "lbl_action"):
             self.lbl_action.config(text=f"Action: {self.controller.current_action}", fg="#38BDF8")
 
-    def on_fish_caught(self, count, fish_name=None, stats=None):
+    def on_fish_caught(self, count, fish_name=None, stats=None, failed_count=0):
         def _update():
-            self.lbl_fish_count.config(text=f"{count} Fish")
-            if fish_name:
+            total = count + failed_count
+            rate = (count / total * 100.0) if total > 0 else 100.0
+            self.lbl_fish_count.config(text=f"{count} Fish ({rate:.0f}%)")
+            if fish_name and fish_name != "None":
                 self.lbl_last_fish.config(text=f"Last: {fish_name} 🐟")
-            if hasattr(self, "lbl_history") and stats:
-                summary_lines = [f"{k}: {v}" for k, v in stats.items()]
-                self.lbl_history.config(text=" | ".join(summary_lines))
+            if hasattr(self, "lbl_history"):
+                summary_lines = [f"Total: {count}  |  Lost: {failed_count}  |  Win Rate: {rate:.1f}%"]
+                if stats:
+                    species_text = " | ".join(f"{k}: {v}" for k, v in stats.items())
+                    summary_lines.append(f"Catches: {species_text}")
+                self.lbl_history.config(text="\n".join(summary_lines))
         self.root.after(0, _update)
         play_sound_async(1600, 100)
 
