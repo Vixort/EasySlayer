@@ -162,13 +162,11 @@ class FishingController:
                     break
 
                 if not bite_detected:
-                    self.set_state(FishingState.RECOVERY, "No bite detected: recovering and recasting...")
-                    self.current_action = "STUCK_RECOVERY"
+                    self.set_state(FishingState.RECOVERY, "No bite detected: recasting...")
+                    self.current_action = "RECOVERY_RECAST"
                     self.input_mgr.force_mouse_up()
                     self.detector.reset_tracking()
-                    # Perform click to reset any stuck rod/prompt
-                    self.input_mgr.click(0.06)
-                    self._sleep_interruptible(0.8)
+                    self._sleep_interruptible(0.4)
                     continue
 
                 # ==============================================================
@@ -341,12 +339,13 @@ class FishingController:
                 if not self.running:
                     break
 
-                # If recovery was triggered or fish was not hooked, reset rod and recast immediately
+                # If recovery was triggered or fish was not hooked, directly loop back to recast (Single click)
                 if stuck_triggered or not fish_caught:
-                    self.current_action = "RECOVERY_CLICK"
-                    self._sleep_interruptible(0.5)
-                    self.input_mgr.click(0.06)
-                    self._sleep_interruptible(0.8)
+                    self.set_state(FishingState.RECOVERY, "Resetting: recasting rod...")
+                    self.current_action = "RECOVERY_RECAST"
+                    self.input_mgr.force_mouse_up()
+                    self.detector.reset_tracking()
+                    self._sleep_interruptible(0.4)
                     continue
 
                 # ==============================================================
