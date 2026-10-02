@@ -427,18 +427,17 @@ class FishBarDetector:
 
         # =====================================================================
         # 5. Bar Active State Decision
-        # Rejects pure background false positives while guaranteeing instant catch detection.
-        # The white slider is the quintessential active indicator: when fish is caught, slider disappears immediately.
+        # Rejects pure background false positives while guaranteeing responsive catch detection.
         # =====================================================================
         frame_has_bar = False
 
-        if white_box is not None and white_conf >= 0.55:
+        if white_box is not None and white_conf >= 0.52:
             frame_has_bar = True
             self.white_lost_frames = 0
         else:
-            # If slider is missing, only allow at most 2 grace frames while active
-            # (to handle momentary occlusion when slider crosses dense target colors)
-            if self.is_active and self.white_lost_frames <= 2 and detected_target_zone is not None and best_target_score >= 0.85:
+            # If slider is missing, check if target zone is still clearly present (e.g. slider inside target)
+            self.white_lost_frames += 1
+            if self.is_active and self.white_lost_frames <= 6 and detected_target_zone is not None and best_target_score >= 0.65:
                 frame_has_bar = True
             else:
                 frame_has_bar = False
@@ -557,9 +556,10 @@ class FishCatchDetector:
     def update_config(self, config):
         self.config = config
 
-    def detect_t_prompt(self, bgr_frame, threshold=0.68, scales=(0.8, 0.9, 1.0, 1.1, 1.25)):
+    def detect_t_prompt(self, bgr_frame, threshold=0.55, scales=(0.65, 0.75, 0.85, 1.0, 1.15, 1.30, 1.45)):
         """
         Detects the [T] interaction button prompt anywhere in the frame using multi-scale matching.
+        Uses a robust 0.55 threshold to detect prompts even with active progress rings or translucency.
         Returns: (found: bool, confidence: float, box: (x, y, w, h), center: (cx, cy))
         """
         if self.t_tmpl_gray is None or bgr_frame is None or bgr_frame.size == 0:
@@ -616,9 +616,9 @@ class FishCatchDetector:
 
     def recognize_fish_name(self, bgr_frame, prompt_box=None):
         """
-        Runs Windows Native Media OCR on in-memory frame buffer to extract fish name.
-        If prompt_box (x, y, w, h) of [T] is given, focuses on the banner above the prompt.
-        Takes ~3-5ms without touching disk.
+        Multi-Pass OCR on in-memory frame buffer to extract fish/item name.
+        Uses enhanced contrast, scaling, and thresholding passes to maximize recognition rate.
+        Takes ~4ms without touching disk.
         """
         if not HAS_WINSDK_OCR or self.ocr_engine is None or bgr_frame is None or bgr_frame.size == 0:
             return None
@@ -626,25 +626,35 @@ class FishCatchDetector:
         fh, fw = bgr_frame.shape[:2]
         crop_target = bgr_frame
 
-        # If [T] prompt location is provided, the catch banner ("Fish Name Caught") is positioned directly above it
+        # If [T] prompt location is provided, focus on the banner region above the prompt
         if prompt_box is not None:
             bx, by, bw, bh = prompt_box
-            rx1 = max(0, int(bx - 170))
-            rx2 = min(fw, int(bx + bw + 170))
-            ry1 = max(0, int(by - 140))
-            ry2 = min(fh, int(by + 15))
+            rx1 = max(0, int(bx - 200))
+            rx2 = min(fw, int(bx + bw + 200))
+            ry1 = max(0, int(by - 160))
+            ry2 = min(fh, int(by + 20))
             if ry2 > ry1 and rx2 > rx1:
                 crop_target = bgr_frame[ry1:ry2, rx1:rx2]
 
-        success, buffer = cv2.imencode('.png', crop_target)
-        if not success:
+        ch, cw = crop_target.shape[:2]
+        if ch < 10 or cw < 10:
             return None
 
-        async def _run_ocr():
+        # Build multi-pass enhanced images
+        # Pass 1: 2x upscaled
+        scaled = cv2.resize(crop_target, (cw * 2, ch * 2), interpolation=cv2.INTER_CUBIC)
+        # Pass 2: High contrast grayscale
+        gray = cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY)
+        # Pass 3: White text binarization
+        _, binarized = cv2.threshold(gray, 135, 255, cv2.THRESH_BINARY)
+
+        candidates = [scaled, binarized, crop_target]
+
+        async def _run_single_ocr(buf):
             try:
                 stream = InMemoryRandomAccessStream()
                 writer = DataWriter(stream.get_output_stream_at(0))
-                writer.write_bytes(buffer.tobytes())
+                writer.write_bytes(buf)
                 await writer.store_async()
                 decoder = await BitmapDecoder.create_async(stream)
                 bitmap = await decoder.get_software_bitmap_async()
@@ -653,15 +663,23 @@ class FishCatchDetector:
             except Exception:
                 return ""
 
-        try:
-            raw_text = asyncio.run(_run_ocr())
-            name = self.clean_fish_name(raw_text)
-            # If cropped banner gave nothing and we had a prompt box, fallback to searching whole frame
-            if not name and prompt_box is not None:
-                return self.recognize_fish_name(bgr_frame, prompt_box=None)
-            return name
-        except Exception:
-            return None
+        for candidate_img in candidates:
+            success, buffer = cv2.imencode('.png', candidate_img)
+            if not success:
+                continue
+            try:
+                raw_text = asyncio.run(_run_single_ocr(buffer.tobytes()))
+                name = self.clean_fish_name(raw_text)
+                if name:
+                    return name
+            except Exception:
+                pass
+
+        # If localized search failed, fallback to scanning full frame if prompt_box was set
+        if prompt_box is not None:
+            return self.recognize_fish_name(bgr_frame, prompt_box=None)
+
+        return None
 
     def extract_frame_bytes(self, bgr_frame):
         """Encodes any BGR frame into PNG bytes directly for Discord webhook."""
