@@ -427,19 +427,21 @@ class FishBarDetector:
 
         # =====================================================================
         # 5. Bar Active State Decision
-        # Rejects pure background false positives while guaranteeing responsive bite detection
+        # Rejects pure background false positives while guaranteeing instant catch detection.
+        # The white slider is the quintessential active indicator: when fish is caught, slider disappears immediately.
         # =====================================================================
         frame_has_bar = False
 
-        # Primary rule: White Slider detected with good confidence
-        if white_box is not None and white_conf >= 0.58:
+        if white_box is not None and white_conf >= 0.55:
             frame_has_bar = True
-        # Secondary rule: In-game continuity (already active minigame, target maintains active state)
-        elif self.is_active and detected_target_zone is not None and best_target_score >= 0.65:
-            frame_has_bar = True
-        # Both slider and target present
-        elif white_box is not None and detected_target_zone is not None:
-            frame_has_bar = True
+            self.white_lost_frames = 0
+        else:
+            # If slider is missing, only allow at most 2 grace frames while active
+            # (to handle momentary occlusion when slider crosses dense target colors)
+            if self.is_active and self.white_lost_frames <= 2 and detected_target_zone is not None and best_target_score >= 0.85:
+                frame_has_bar = True
+            else:
+                frame_has_bar = False
 
         if frame_has_bar:
             self.lost_frames = 0

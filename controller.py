@@ -200,6 +200,7 @@ class FishingController:
                 last_tap_time = 0.0
                 tap_start_time = 0.0
                 is_tap_active = False
+                slider_missing_count = 0
 
                 fish_caught = False
                 stuck_triggered = False
@@ -241,6 +242,20 @@ class FishingController:
 
                     white_y = det_res["white_center_y"]
                     target_center_y = det_res["target_center_y"]
+
+                    # Fallback check: If white slider is gone for 3 consecutive checks,
+                    # minigame has definitely ended (fish caught or line broke)
+                    if white_y is None:
+                        slider_missing_count += 1
+                        if slider_missing_count >= 3:
+                            self.input_mgr.force_mouse_up()
+                            self.current_action = "RELEASE (CAUGHT)"
+                            self.detector.reset_tracking()
+                            fish_caught = True
+                            minigame_running = False
+                            break
+                    else:
+                        slider_missing_count = 0
 
                     # Track velocity of white slider (pixels/sec)
                     if white_y is not None:
