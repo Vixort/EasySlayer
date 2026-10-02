@@ -661,10 +661,17 @@ class FishCatchDetector:
         except Exception:
             return None
 
+    def extract_frame_bytes(self, bgr_frame):
+        """Encodes any BGR frame into PNG bytes directly for Discord webhook."""
+        if bgr_frame is None or bgr_frame.size == 0:
+            return None
+        success, buffer = cv2.imencode('.png', bgr_frame)
+        return buffer.tobytes() if success else None
+
     def extract_fish_thumbnail(self, bgr_frame, prompt_box=None):
         """
-        Extracts a compact cropped PNG image of the caught fish / banner
-        for Discord webhook attachments.
+        Extracts a nicely proportioned cropped PNG image of the caught fish / banner
+        for Discord webhook attachments. Ensures nothing is cut off.
         """
         if bgr_frame is None or bgr_frame.size == 0:
             return None
@@ -672,13 +679,15 @@ class FishCatchDetector:
         fh, fw = bgr_frame.shape[:2]
         if prompt_box is not None:
             bx, by, bw, bh = prompt_box
-            rx1 = max(0, int(bx - 180))
-            rx2 = min(fw, int(bx + bw + 180))
-            ry1 = max(0, int(by - 130))
-            ry2 = min(fh, int(by + 10))
+            # Generous bounding box to capture the full banner and fish model
+            rx1 = max(0, int(bx - 220))
+            rx2 = min(fw, int(bx + bw + 220))
+            ry1 = max(0, int(by - 180))
+            ry2 = min(fh, int(by + 40))
             crop_img = bgr_frame[ry1:ry2, rx1:rx2]
         else:
-            cw, ch = min(320, fw), min(120, fh)
+            # Fallback to generous center region
+            cw, ch = min(500, fw), min(220, fh)
             cx, cy = fw // 2, fh // 2
             crop_img = bgr_frame[max(0, cy - ch // 2):min(fh, cy + ch // 2),
                                  max(0, cx - cw // 2):min(fw, cx + cw // 2)]
@@ -686,13 +695,5 @@ class FishCatchDetector:
         if crop_img is None or crop_img.size == 0:
             return None
 
-        ch, cw = crop_img.shape[:2]
-        if cw > 400:
-            scale = 400.0 / cw
-            crop_img = cv2.resize(crop_img, (400, int(ch * scale)), interpolation=cv2.INTER_AREA)
-
-        success, buffer = cv2.imencode('.png', crop_img)
-        if success:
-            return buffer.tobytes()
-        return None
+        return self.extract_frame_bytes(crop_img)
 

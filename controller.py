@@ -375,6 +375,10 @@ class FishingController:
                 caught_name = "Unknown Fish"
                 t_found = False
                 t_box = None
+                fish_thumb_bytes = None
+
+                catch_roi = self.config.get("catch_roi", {})
+                has_custom_catch_roi = catch_roi.get("is_configured", False) and catch_roi.get("width", 0) > 10
 
                 # Scan for [T] prompt and recognize fish name
                 scan_start = time.time()
@@ -382,7 +386,17 @@ class FishingController:
                     screen_frame = self._grab_center_screen_frame(sct)
                     t_found, t_conf, t_box, _ = self.catch_detector.detect_t_prompt(screen_frame)
 
-                    if self.config.get("ocr_fish_name_enabled", True) and caught_name == "Unknown Fish":
+                    # 1. First priority: if user defined a dedicated Catch Photo Area (ROI)
+                    if has_custom_catch_roi:
+                        custom_frame = self._grab_roi_frame(sct, catch_roi)
+                        if self.config.get("ocr_fish_name_enabled", True) and caught_name == "Unknown Fish":
+                            detected_name = self.catch_detector.recognize_fish_name(custom_frame)
+                            if detected_name:
+                                caught_name = detected_name
+                        fish_thumb_bytes = self.catch_detector.extract_frame_bytes(custom_frame)
+
+                    # 2. Otherwise auto-detect via full frame / prompt position
+                    elif self.config.get("ocr_fish_name_enabled", True) and caught_name == "Unknown Fish":
                         detected_name = self.catch_detector.recognize_fish_name(screen_frame, prompt_box=t_box)
                         if detected_name:
                             caught_name = detected_name
@@ -394,6 +408,10 @@ class FishingController:
                 if not self.running:
                     break
 
+                # If no custom ROI was used, extract the smart thumbnail based on prompt location
+                if not has_custom_catch_roi or fish_thumb_bytes is None:
+                    fish_thumb_bytes = self.catch_detector.extract_fish_thumbnail(screen_frame, prompt_box=t_box)
+
                 # Count fish caught and record fish type
                 self.fish_count += 1
                 self.last_fish_name = caught_name
@@ -401,8 +419,7 @@ class FishingController:
                 if self.on_fish_caught:
                     self.on_fish_caught(self.fish_count, self.last_fish_name, self.fish_counts, self.fish_failed_count)
 
-                # Extract small fish screenshot for Discord webhook
-                fish_thumb_bytes = self.catch_detector.extract_fish_thumbnail(screen_frame, prompt_box=t_box)
+                # Send Discord webhook with custom or smart fish screenshot
                 self.webhook_mgr.send_catch_notification(
                     fish_name=caught_name,
                     total_caught=self.fish_count,

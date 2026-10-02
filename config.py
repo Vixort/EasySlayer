@@ -38,12 +38,21 @@ DEFAULT_CONFIG = {
     "ocr_fish_name_enabled": True,      # Scan for caught fish name using Windows OCR
     "delay_before_recast": 2.5,         # Cooldown (s) before looping back to Process 1
     
-    # ROI & Screen capture
+    # ROI & Screen capture (Fishing Bar)
     "roi": {
         "left": 0,
         "top": 0,
         "width": 120,
         "height": 550,
+        "is_configured": False
+    },
+    
+    # Catch Photo Area (Fish & Name Capture ROI for Discord / OCR)
+    "catch_roi": {
+        "left": 0,
+        "top": 0,
+        "width": 0,
+        "height": 0,
         "is_configured": False
     },
     
@@ -59,6 +68,7 @@ DEFAULT_CONFIG = {
     # Hotkeys
     "hotkey_toggle": "F6",
     "hotkey_select_roi": "F7",
+    "hotkey_select_catch_roi": "F9",
     "hotkey_emergency_stop": "F8",
     
     # Discord Webhook Notification

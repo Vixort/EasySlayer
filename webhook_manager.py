@@ -72,7 +72,7 @@ class DiscordWebhookManager:
         }
 
         if image_bytes:
-            embed["thumbnail"] = {"url": "attachment://fish.png"}
+            embed["image"] = {"url": "attachment://fish.png"}
 
         threading.Thread(
             target=self._dispatch_webhook,

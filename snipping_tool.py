@@ -3,11 +3,13 @@ import tkinter as tk
 class SnippingTool:
     """
     A fullscreen translucent overlay that allows the user to drag a rectangle
-    to select the fishing bar region on screen.
+    to select the fishing bar or catch photo region on screen.
     """
-    def __init__(self, parent, on_selection_callback):
+    def __init__(self, parent, on_selection_callback, instruction="Click and drag to select region (Press ESC to cancel)", outline_color="#00FF66"):
         self.parent = parent
         self.callback = on_selection_callback
+        self.instruction = instruction
+        self.outline_color = outline_color
         
         self.start_x = None
         self.start_y = None
@@ -26,7 +28,7 @@ class SnippingTool:
         # Instructions banner
         self.info_text = self.canvas.create_text(
             self.top.winfo_screenwidth() // 2, 50,
-            text="Click and drag to select the fishing bar region (Press ESC to cancel)",
+            text=self.instruction,
             fill="#FFFF00", font=("Segoe UI", 16, "bold")
         )
 
@@ -43,7 +45,7 @@ class SnippingTool:
         self.start_y = event.y
         self.rect_id = self.canvas.create_rectangle(
             self.start_x, self.start_y, self.start_x, self.start_y,
-            outline="#00FF66", width=2, fill="#00FF66", stipple="gray25"
+            outline=self.outline_color, width=2, fill=self.outline_color, stipple="gray25"
         )
         self.text_id = self.canvas.create_text(
             self.start_x, max(20, self.start_y - 15),

@@ -47,8 +47,8 @@ class ModernFishingGUI:
 
         # Initial geometry (compact)
         self.is_expanded = False
-        self.compact_size = (480, 265)
-        self.expanded_size = (480, 770)
+        self.compact_size = (490, 305)
+        self.expanded_size = (490, 830)
         self.root.geometry(f"{self.compact_size[0]}x{self.compact_size[1]}+30+60")
 
         # Dragging state
@@ -195,33 +195,47 @@ class ModernFishingGUI:
         )
         self.lbl_last_fish.pack(fill=tk.X)
 
-        # Action Buttons Grid
+        # Action Buttons Grid (Two Rows)
         btn_grid = tk.Frame(right_panel, bg="#0B0D14")
-        btn_grid.pack(fill=tk.X, pady=(2, 6))
+        btn_grid.pack(fill=tk.X, pady=(2, 4))
+
+        row1 = tk.Frame(btn_grid, bg="#0B0D14")
+        row1.pack(fill=tk.X, pady=(0, 3))
 
         self.btn_start = tk.Button(
-            btn_grid, text="Start [F6]",
+            row1, text="Start [F6]",
             font=("Segoe UI", 9, "bold"), bg="#059669", fg="#FFFFFF",
             activebackground="#047857", activeforeground="#FFFFFF",
-            relief="flat", cursor="hand2", pady=5, command=self.action_start
+            relief="flat", cursor="hand2", pady=4, command=self.action_start
         )
-        self.btn_start.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3))
+        self.btn_start.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 2))
 
         self.btn_stop = tk.Button(
-            btn_grid, text="Stop [F6]",
+            row1, text="Stop [F6]",
             font=("Segoe UI", 9, "bold"), bg="#DC2626", fg="#FFFFFF",
             activebackground="#B91C1C", activeforeground="#FFFFFF",
-            relief="flat", cursor="hand2", pady=5, command=self.action_stop
+            relief="flat", cursor="hand2", pady=4, command=self.action_stop
         )
-        self.btn_stop.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=3)
+        self.btn_stop.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 0))
+
+        row2 = tk.Frame(btn_grid, bg="#0B0D14")
+        row2.pack(fill=tk.X)
 
         self.btn_select = tk.Button(
-            btn_grid, text="Area [F7]",
-            font=("Segoe UI", 9, "bold"), bg="#2563EB", fg="#FFFFFF",
+            row2, text="Bar Area [F7]",
+            font=("Segoe UI", 8, "bold"), bg="#2563EB", fg="#FFFFFF",
             activebackground="#1D4ED8", activeforeground="#FFFFFF",
-            relief="flat", cursor="hand2", pady=5, command=self.action_select_roi
+            relief="flat", cursor="hand2", pady=3, command=self.action_select_roi
         )
-        self.btn_select.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(3, 0))
+        self.btn_select.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 2))
+
+        self.btn_catch_area = tk.Button(
+            row2, text="Fish Photo [F9]",
+            font=("Segoe UI", 8, "bold"), bg="#7C3AED", fg="#FFFFFF",
+            activebackground="#6D28D9", activeforeground="#FFFFFF",
+            relief="flat", cursor="hand2", pady=3, command=self.action_select_catch_roi
+        )
+        self.btn_catch_area.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 0))
 
         # Bottom Utility Row: Session Uptime & Reset Button
         quick_row = tk.Frame(right_panel, bg="#0B0D14")
@@ -340,6 +354,27 @@ class ModernFishingGUI:
         )
         self.chk_ocr_fish.pack(anchor="w", pady=(2, 2))
 
+        # Fish Photo Capture Area controls in Settings
+        f_catch_area = tk.Frame(self.settings_panel, bg="#111420")
+        f_catch_area.pack(fill=tk.X, pady=(4, 2))
+        tk.Label(f_catch_area, text="Fish Photo Area:", font=("Segoe UI", 8), fg="#E2E8F0", bg="#111420").pack(side=tk.LEFT)
+        self.lbl_catch_area_status = tk.Label(f_catch_area, text="Auto", font=("Segoe UI", 8, "bold"), fg="#A855F7", bg="#111420")
+        self.lbl_catch_area_status.pack(side=tk.LEFT, padx=(4, 0))
+
+        btn_reset_catch_roi = tk.Button(
+            f_catch_area, text="Reset Auto", font=("Segoe UI", 7),
+            bg="#1E2337", fg="#94A3B8", relief="flat", padx=6, pady=1, cursor="hand2",
+            command=self.action_reset_catch_roi
+        )
+        btn_reset_catch_roi.pack(side=tk.RIGHT)
+        btn_set_catch_roi = tk.Button(
+            f_catch_area, text="Select [F9]", font=("Segoe UI", 7, "bold"),
+            bg="#7C3AED", fg="#FFFFFF", relief="flat", padx=6, pady=1, cursor="hand2",
+            command=self.action_select_catch_roi
+        )
+        btn_set_catch_roi.pack(side=tk.RIGHT, padx=4)
+        self._update_catch_roi_label()
+
         # Target Frame checkbox
         self.chk_hud = tk.Checkbutton(
             self.settings_panel, text="Show green HUD border on in-game bar",
@@ -432,6 +467,36 @@ class ModernFishingGUI:
             self.bar_hud.show(roi["left"], roi["top"], roi["width"], roi["height"])
 
         play_sound_async(1000, 80)
+
+    def _update_catch_roi_label(self):
+        c_roi = self.cfg.get("catch_roi", {})
+        if c_roi.get("is_configured", False) and c_roi.get("width", 0) > 0:
+            w = c_roi.get("width")
+            h = c_roi.get("height")
+            self.lbl_catch_area_status.config(text=f"Custom ({w}x{h})", fg="#10B981")
+        else:
+            self.lbl_catch_area_status.config(text="Auto (Center)", fg="#A855F7")
+
+    def action_select_catch_roi(self):
+        SnippingTool(
+            self.root, self.on_catch_roi_selected,
+            instruction="Click & drag over the Fish Catch Banner / Fish Area (Press ESC to cancel)",
+            outline_color="#A855F7"
+        )
+
+    def on_catch_roi_selected(self, roi):
+        self.cfg["catch_roi"] = roi
+        config.save_config(self.cfg)
+        self.controller.update_config(self.cfg)
+        self._update_catch_roi_label()
+        play_sound_async(1400, 100)
+
+    def action_reset_catch_roi(self):
+        self.cfg["catch_roi"] = {"left": 0, "top": 0, "width": 0, "height": 0, "is_configured": False}
+        config.save_config(self.cfg)
+        self.controller.update_config(self.cfg)
+        self._update_catch_roi_label()
+        play_sound_async(900, 80)
 
     def toggle_bar_hud(self):
         roi = self.cfg.get("roi", {})
@@ -644,6 +709,9 @@ class ModernFishingGUI:
                 elif key == pynput_keyboard.Key.f7:
                     if not self.controller.running:
                         self.root.after(0, self.action_select_roi)
+                elif key == pynput_keyboard.Key.f9:
+                    if not self.controller.running:
+                        self.root.after(0, self.action_select_catch_roi)
                 elif key == pynput_keyboard.Key.f8:
                     self.root.after(0, self.action_stop)
             except Exception:
