@@ -46,7 +46,7 @@ class FishBarDetector:
 
         # Bar column spatial memory (X-axis alignment)
         self.tracked_bar_x = None      # smoothed center X of bar track
-        self.tracked_bar_w = 56        # estimated bar width in pixels
+        self.tracked_bar_w = 58        # calibrated bar width in pixels (matches in-game HUD ~58px)
         self.bar_lock_frames = 0
 
         # White slider memory
@@ -81,7 +81,7 @@ class FishBarDetector:
         self.lost_frames = 0
         self.is_active = False
         self.tracked_bar_x = None
-        self.tracked_bar_w = 56
+        self.tracked_bar_w = 58
         self.bar_lock_frames = 0
         self.last_white_box = None
         self.last_white_center_y = None
@@ -191,7 +191,7 @@ class FishBarDetector:
         # Isolates the vertical track and excludes external noisy background (water, grass, etc.)
         # =====================================================================
         bar_center_x = self.tracked_bar_x if self.tracked_bar_x is not None else (w_img / 2.0)
-        half_w = int(self.tracked_bar_w * 0.52)  # ~29px radius for 56px bar
+        half_w = int(self.tracked_bar_w * 0.58)  # ~34px radius for 58px bar (captures complete outer borders)
         col_x_start = max(0, int(bar_center_x - half_w))
         col_x_end = min(w_img, int(bar_center_x + half_w))
         col_w = max(1, col_x_end - col_x_start)
@@ -199,6 +199,7 @@ class FishBarDetector:
         track_bgr = bgr_frame[:, col_x_start:col_x_end]
         track_gray = gray[:, col_x_start:col_x_end]
         track_hsv = hsv[:, col_x_start:col_x_end]
+        track_h = track_hsv[:, :, 0]
         track_s = s_chan[:, col_x_start:col_x_end]
         track_v = v_chan[:, col_x_start:col_x_end]
 
@@ -245,15 +246,24 @@ class FishBarDetector:
                     for j in range(i + 1, len(peak_rows)):
                         bot_y, bot_g = peak_rows[j]
                         h_span = bot_y - top_y
-                        # Target height constraint: between 20px and 35% of total height
-                        if 20 <= h_span <= min(95, int(h_img * 0.35)):
+                        # Target height constraint: between 22px and 35% of total height (calibrated to ~42px target)
+                        if 22 <= h_span <= min(95, int(h_img * 0.35)):
                             zone_s = float((cs_s[bot_y] - cs_s[top_y]) / h_span)
                             zone_v = float((cs_v[bot_y] - cs_v[top_y]) / h_span)
                             # Target has saturation or brightness
                             if zone_s >= 35 or zone_v >= 50:
-                                h_fit = 1.0 - min(1.0, abs(h_span - 40) / 45.0)
-                                grad_score = min(1.0, (top_g + bot_g) / 550.0)
-                                score = 0.5 * grad_score + 0.5 * h_fit
+                                h_fit = 1.0 - min(1.0, abs(h_span - 42) / 45.0)
+                                grad_score = min(1.0, (top_g + bot_g) / 500.0)
+                                
+                                # Golden/Amber target specificity boost (matches user's screenshot)
+                                sub_h = track_h[top_y:bot_y, :]
+                                sub_s = track_s[top_y:bot_y, :]
+                                sub_v = track_v[top_y:bot_y, :]
+                                is_gold = (sub_h >= 16) & (sub_h <= 38) & (sub_s >= 65) & (sub_v >= 55)
+                                gold_ratio = float(np.mean(is_gold))
+                                gold_boost = 0.15 * gold_ratio
+
+                                score = 0.45 * grad_score + 0.40 * h_fit + gold_boost
                                 target_candidates.append({
                                     "score": score,
                                     "box": (col_x_start, top_y, col_w, h_span),
@@ -264,15 +274,18 @@ class FishBarDetector:
             # Strategy B: Geometric Chromatic Blob Detection
             # Filters out full-height backgrounds; enforces bar-like dimensions
             # -----------------------------------------------------------------
-            user_min_val = self.config.get("target_min_val", 120)
-            user_min_sat = self.config.get("target_min_sat", 65)
-            # Use adaptive thresholds: lower min_v and min_s slightly to detect darker/tinted bars
-            min_v = min(user_min_val, 70)
+            user_min_val = self.config.get("target_min_val", 70)
+            user_min_sat = self.config.get("target_min_sat", 45)
+            min_v = min(user_min_val, 65)
             min_s = min(user_min_sat, 45)
 
+            # Universal chromatic + Dedicated Golden/Amber spectrum boost
             chroma_mask = (track_v >= min_v) & (track_s >= min_s)
+            gold_mask = (track_h >= 16) & (track_h <= 38) & (track_s >= 65) & (track_v >= 55)
+            combined_chroma = chroma_mask | gold_mask
+
             kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-            chroma_clean = cv2.morphologyEx(chroma_mask.astype(np.uint8), cv2.MORPH_CLOSE, kernel)
+            chroma_clean = cv2.morphologyEx(combined_chroma.astype(np.uint8), cv2.MORPH_CLOSE, kernel)
             cnts, _ = cv2.findContours(chroma_clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
             for cnt in cnts:
