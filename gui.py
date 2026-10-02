@@ -48,7 +48,7 @@ class ModernFishingGUI:
         # Initial geometry (compact)
         self.is_expanded = False
         self.compact_size = (490, 305)
-        self.expanded_size = (490, 830)
+        self.expanded_size = (490, 850)
         self.root.geometry(f"{self.compact_size[0]}x{self.compact_size[1]}+30+60")
 
         # Dragging state
@@ -273,14 +273,23 @@ class ModernFishingGUI:
         self.spn_deadzone.insert(0, str(self.cfg.get("deadzone_px", 5)))
         self.spn_deadzone.pack(side=tk.RIGHT)
 
-        # Process 4 -> 5 Post Catch Delay (Wait before holding T)
+        # Process 4 -> 5 Post Catch Delay (Wait before OCR / holding T)
         f_pc = tk.Frame(self.settings_panel, bg="#111420")
         f_pc.pack(fill=tk.X, pady=3)
-        tk.Label(f_pc, text="Post-Catch Grace Delay (s):", font=("Segoe UI", 8), fg="#E2E8F0", bg="#111420").pack(side=tk.LEFT)
-        self.spn_post_catch = tk.Spinbox(f_pc, from_=0.5, to=10.0, increment=0.5, width=6, bg="#1E2337", fg="#FFFFFF")
+        tk.Label(f_pc, text="Delay Before Collect/OCR (s):", font=("Segoe UI", 8), fg="#E2E8F0", bg="#111420").pack(side=tk.LEFT)
+        self.spn_post_catch = tk.Spinbox(f_pc, from_=0.2, to=10.0, increment=0.2, width=6, bg="#1E2337", fg="#FFFFFF")
         self.spn_post_catch.delete(0, tk.END)
-        self.spn_post_catch.insert(0, str(self.cfg.get("post_catch_delay", 1.5)))
+        self.spn_post_catch.insert(0, str(self.cfg.get("post_catch_delay", 1.0)))
         self.spn_post_catch.pack(side=tk.RIGHT)
+
+        # Max Collect Timeout
+        f_ct = tk.Frame(self.settings_panel, bg="#111420")
+        f_ct.pack(fill=tk.X, pady=3)
+        tk.Label(f_ct, text="Max Collect Timeout (s):", font=("Segoe UI", 8), fg="#E2E8F0", bg="#111420").pack(side=tk.LEFT)
+        self.spn_collect_timeout = tk.Spinbox(f_ct, from_=3.0, to=30.0, increment=1.0, width=6, bg="#1E2337", fg="#FFFFFF")
+        self.spn_collect_timeout.delete(0, tk.END)
+        self.spn_collect_timeout.insert(0, str(self.cfg.get("collect_timeout", 10.0)))
+        self.spn_collect_timeout.pack(side=tk.RIGHT)
 
         # Hold T Duration
         f_t = tk.Frame(self.settings_panel, bg="#111420")
@@ -515,6 +524,7 @@ class ModernFishingGUI:
             self.cfg["target_min_val"] = int(self.spn_val.get())
             self.cfg["stuck_minigame_timeout"] = float(self.spn_stuck_mg.get())
             self.cfg["stuck_target_lost_timeout"] = float(self.spn_stuck_lost.get())
+            self.cfg["collect_timeout"] = float(self.spn_collect_timeout.get())
             self.cfg["auto_verify_collect"] = bool(self.auto_verify_var.get())
             self.cfg["ocr_fish_name_enabled"] = bool(self.ocr_fish_var.get())
             self.cfg["webhook_enabled"] = bool(self.webhook_enabled_var.get())

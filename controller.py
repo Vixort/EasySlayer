@@ -357,19 +357,19 @@ class FishingController:
                     continue
 
                 # ==============================================================
-                # Process 4: Recognize Caught Fish Name & Detect [T] Prompt
+                # Process 4: Post-Catch Delay & Initial Fish Recognition
                 # ==============================================================
-                post_catch_delay = self.config.get("post_catch_delay", 0.8)
-                self.current_action = "DETECT_CATCH"
-                self.set_state(FishingState.COLLECTING, "Fish hooked! Identifying catch...")
+                post_catch_delay = self.config.get("post_catch_delay", 1.0)
+                self.current_action = "WAIT_CATCH_DELAY"
+                self.set_state(FishingState.COLLECTING, f"Fish caught! Waiting {post_catch_delay:.1f}s for animation...")
                 self._sleep_interruptible(post_catch_delay)
                 if not self.running:
                     break
 
                 t_key = self.config.get("hold_t_key", "t")
-                hold_t_time = self.config.get("hold_t_duration", 2.2)
+                hold_t_time = self.config.get("hold_t_duration", 2.0)
                 auto_verify = self.config.get("auto_verify_collect", True)
-                t_timeout = self.config.get("t_prompt_timeout", 5.0)
+                collect_timeout = self.config.get("collect_timeout", 10.0)
                 max_retries = self.config.get("t_retry_limit", 5)
 
                 caught_name = "Unknown Fish"
@@ -380,62 +380,34 @@ class FishingController:
                 catch_roi = self.config.get("catch_roi", {})
                 has_custom_catch_roi = catch_roi.get("is_configured", False) and catch_roi.get("width", 0) > 10
 
-                # Scan for [T] prompt and recognize fish name
-                scan_start = time.time()
-                while self.running and (time.time() - scan_start < t_timeout):
-                    screen_frame = self._grab_center_screen_frame(sct)
-                    t_found, t_conf, t_box, _ = self.catch_detector.detect_t_prompt(screen_frame)
+                # Initial scan for [T] prompt and fish name
+                screen_frame = self._grab_center_screen_frame(sct)
+                t_found, t_conf, t_box, _ = self.catch_detector.detect_t_prompt(screen_frame)
 
-                    # 1. First priority: if user defined a dedicated Catch Photo Area (ROI)
-                    if has_custom_catch_roi:
-                        custom_frame = self._grab_roi_frame(sct, catch_roi)
-                        if self.config.get("ocr_fish_name_enabled", True) and caught_name == "Unknown Fish":
-                            detected_name = self.catch_detector.recognize_fish_name(custom_frame)
-                            if detected_name:
-                                caught_name = detected_name
-                        fish_thumb_bytes = self.catch_detector.extract_frame_bytes(custom_frame)
-
-                    # 2. Otherwise auto-detect via full frame / prompt position
-                    elif self.config.get("ocr_fish_name_enabled", True) and caught_name == "Unknown Fish":
-                        detected_name = self.catch_detector.recognize_fish_name(screen_frame, prompt_box=t_box)
+                if has_custom_catch_roi:
+                    custom_frame = self._grab_roi_frame(sct, catch_roi)
+                    if self.config.get("ocr_fish_name_enabled", True):
+                        detected_name = self.catch_detector.recognize_fish_name(custom_frame)
                         if detected_name:
                             caught_name = detected_name
-
-                    if t_found:
-                        break
-                    time.sleep(0.08)
-
-                if not self.running:
-                    break
-
-                # If no custom ROI was used, extract the smart thumbnail based on prompt location
-                if not has_custom_catch_roi or fish_thumb_bytes is None:
+                    fish_thumb_bytes = self.catch_detector.extract_frame_bytes(custom_frame)
+                elif self.config.get("ocr_fish_name_enabled", True):
+                    detected_name = self.catch_detector.recognize_fish_name(screen_frame, prompt_box=t_box)
+                    if detected_name:
+                        caught_name = detected_name
                     fish_thumb_bytes = self.catch_detector.extract_fish_thumbnail(screen_frame, prompt_box=t_box)
 
-                # Count fish caught and record fish type
-                self.fish_count += 1
-                self.last_fish_name = caught_name
-                self.fish_counts[caught_name] = self.fish_counts.get(caught_name, 0) + 1
-                if self.on_fish_caught:
-                    self.on_fish_caught(self.fish_count, self.last_fish_name, self.fish_counts, self.fish_failed_count)
-
-                # Send Discord webhook with custom or smart fish screenshot
-                self.webhook_mgr.send_catch_notification(
-                    fish_name=caught_name,
-                    total_caught=self.fish_count,
-                    total_failed=self.fish_failed_count,
-                    image_bytes=fish_thumb_bytes
-                )
-
                 # ==============================================================
-                # Process 5: Verified Auto-Collect Loop (Hold T until prompt disappears)
+                # Process 5: Verified Auto-Collect Loop (Retry & Re-OCR until prompt disappears)
                 # ==============================================================
                 if auto_verify:
+                    collect_start = time.time()
                     attempt = 0
-                    while self.running and attempt < max_retries:
+                    while self.running and (time.time() - collect_start < collect_timeout) and (attempt < max_retries):
                         attempt += 1
-                        self.current_action = f"HOLD_{t_key.upper()} ({attempt}/{max_retries})"
-                        self.set_state(FishingState.COLLECTING, f"Holding '{t_key.upper()}' for {caught_name} (Try {attempt}/{max_retries})...")
+                        elapsed = time.time() - collect_start
+                        self.current_action = f"HOLD_{t_key.upper()} ({attempt})"
+                        self.set_state(FishingState.COLLECTING, f"Holding '{t_key.upper()}' to collect {caught_name} (Try {attempt}, {elapsed:.1f}s/{collect_timeout:.0f}s)...")
 
                         self.input_mgr.hold_key(t_key, hold_t_time, is_running_check=lambda: self.running, repeat_interval=0.05)
                         if not self.running:
@@ -446,18 +418,56 @@ class FishingController:
 
                         # Re-scan to verify if [T] prompt is still on screen
                         screen_frame = self._grab_center_screen_frame(sct)
-                        t_still_there, _, _, _ = self.catch_detector.detect_t_prompt(screen_frame)
+                        t_still_there, _, new_box, _ = self.catch_detector.detect_t_prompt(screen_frame)
                         if not t_still_there:
                             self.set_state(FishingState.COLLECTING, f"Collected: {caught_name}!")
                             break
                         else:
-                            self.set_state(FishingState.COLLECTING, f"[T] still visible! Retrying collect ({attempt}/{max_retries})...")
+                            # Re-run OCR to refine fish name and capture a clearer image if previous attempt failed
+                            t_box = new_box or t_box
+                            if has_custom_catch_roi:
+                                custom_frame = self._grab_roi_frame(sct, catch_roi)
+                                if self.config.get("ocr_fish_name_enabled", True):
+                                    re_name = self.catch_detector.recognize_fish_name(custom_frame)
+                                    if re_name:
+                                        caught_name = re_name
+                                fish_thumb_bytes = self.catch_detector.extract_frame_bytes(custom_frame)
+                            else:
+                                if self.config.get("ocr_fish_name_enabled", True):
+                                    re_name = self.catch_detector.recognize_fish_name(screen_frame, prompt_box=t_box)
+                                    if re_name:
+                                        caught_name = re_name
+                                fish_thumb_bytes = self.catch_detector.extract_fish_thumbnail(screen_frame, prompt_box=t_box)
+
+                            self.set_state(FishingState.COLLECTING, f"[T] still visible! Re-scanning & retrying ({attempt})...")
                             self._sleep_interruptible(0.2)
                 else:
                     self.current_action = f"HOLD_{t_key.upper()}"
                     self.set_state(FishingState.COLLECTING, f"Holding '{t_key.upper()}' to collect {caught_name}...")
                     self.input_mgr.hold_key(t_key, hold_t_time, is_running_check=lambda: self.running, repeat_interval=0.05)
                     self._sleep_interruptible(0.5)
+
+                if not self.running:
+                    break
+
+                # Count fish caught and record fish type
+                self.fish_count += 1
+                self.last_fish_name = caught_name
+                self.fish_counts[caught_name] = self.fish_counts.get(caught_name, 0) + 1
+                if self.on_fish_caught:
+                    self.on_fish_caught(self.fish_count, self.last_fish_name, self.fish_counts, self.fish_failed_count)
+
+                # Send Discord webhook with custom or smart fish screenshot
+                if fish_thumb_bytes is None and not has_custom_catch_roi:
+                    screen_frame = self._grab_center_screen_frame(sct)
+                    fish_thumb_bytes = self.catch_detector.extract_fish_thumbnail(screen_frame, prompt_box=t_box)
+
+                self.webhook_mgr.send_catch_notification(
+                    fish_name=caught_name,
+                    total_caught=self.fish_count,
+                    total_failed=self.fish_failed_count,
+                    image_bytes=fish_thumb_bytes
+                )
 
                 if not self.running:
                     break

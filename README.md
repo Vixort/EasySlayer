@@ -128,13 +128,11 @@ Click the **`Settings`** button on the HUD to expand the configuration panel. Se
 | Setting | Default | What It Controls |
 | :--- | :---: | :--- |
 | **Center Deadzone (px)** | `5` | Margin of error around the target center. Smaller values make corrections more aggressive; larger values reduce jitter. |
-| **Post-Catch Grace Delay (s)** | `1.5` | Wait time between minigame completion and holding the collection key, allowing the in-game animation to finish. |
-| **Collection Key Duration (s)** | `3.0` | How long the interaction key (`T`) is held down to claim the fish into your inventory. |
-| **Recast Cooldown Delay (s)** | `3.0` | Rest time after collecting a fish before casting the rod again. |
-| **Target Brightness (Val)** | `120` | Minimum brightness (0-255) for detecting glowing target zones. |
-| **Target Saturation (Sat)** | `65` | Minimum color saturation (0-255) to separate the target zone from greyscale background elements. |
-| **Bite Wait Timeout (s)** | `60.0` | Maximum time to wait for a fish bite before automatically recasting. |
-| **Auto-Verify [T] Prompt** | `True` | Continuously detects the `[T]` prompt and retries holding `T` until the prompt disappears, ensuring reliable collection. |
+| **Delay Before Collect / OCR (s)** | `1.0` | Wait time between minigame completion and initiating OCR / holding [T] (allows catch animation to finish). |
+| **Max Collect Timeout (s)** | `10.0` | Maximum time allowed to attempt collecting a fish before aborting and recasting (configurable 3–30s). |
+| **Collection Key Duration (s)** | `2.0` | How long the interaction key (`T`) is held down per collection attempt. |
+| **Auto-Verify [T] Prompt** | `True` | Continuously detects the `[T]` prompt, performs re-OCR, and retries holding `T` until the prompt disappears. |
+| **Fish Photo Area [F9]** | `Configured` | Custom user-selected region to capture the caught fish and name banner for OCR and Discord webhooks. |
 | **Identify Caught Fish (OCR)** | `True` | Reads and logs caught fish names (e.g., "Golden Fish") using Windows Native OCR without third-party tools. |
 | **Discord Webhook** | `Enabled / URL` | Sends rich embeds to your Discord channel with the caught fish photo, statistics, and success/failure rates. |
 
