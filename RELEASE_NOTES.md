@@ -1,3 +1,28 @@
+# EasySlayer Release v2.0.1 — Hotfix & Mini-Update: Guaranteed Collect & Stability
+
+**Release Version:** `v2.0.1`  
+**Branch:** `main`  
+**License:** MIT  
+
+---
+
+## 🌟 Highlights of v2.0.1 (Mini-Update)
+
+EasySlayer `v2.0.1` is a targeted hotfix release resolving critical post-minigame edge cases and collection stalls in **Roblox Slayer 2**:
+
+1. **Guaranteed Auto-Collect Execution (`[T]` Key):**
+   - Eliminated false "Fish Escaped" early exits. Whenever a minigame concludes normally, the bot always commits to holding `[T]` to ensure caught fish and items are securely claimed.
+   - Prevents untimely recasts while the catch animation or item splash window is still loading.
+2. **Robust Minigame Completion Detection:**
+   - Replaced fragile 3-frame (~12ms) slider absence triggers with a verified 15-frame dual-absence check (requiring both slider and target zone to disappear).
+   - Prevents the minigame from exiting prematurely when the white slider momentarily blends into high-contrast or golden target fish.
+3. **Multi-Pass OCR & Expanded [T] Prompt Recognition:**
+   - Viewport expanded to 85% x 85% of the primary display.
+   - Broadened multi-scale prompt search (0.65x – 1.45x) with dynamic tolerance (0.55 confidence threshold) to reliably detect circular progress animations around the `[T]` prompt.
+   - Added 2x upscaled and binarized multi-pass Windows Native OCR parsing for clean fish and item name recognition.
+
+---
+
 # EasySlayer Release v2.0.0 — Major Architecture & Vision Overhaul
 
 **Release Version:** `v2.0.0`  

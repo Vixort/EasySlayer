@@ -104,7 +104,7 @@ class ModernFishingGUI:
         self.title_bar.bind("<B1-Motion>", self._on_drag_motion)
 
         lbl_logo = tk.Label(
-            self.title_bar, text="EasySlayer",
+            self.title_bar, text="EasySlayer v2.0.1",
             font=("Segoe UI", 10, "bold"), fg="#38BDF8", bg="#131722"
         )
         lbl_logo.pack(side=tk.LEFT, padx=(12, 4))
